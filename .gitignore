@@ -4,3 +4,7 @@ server.cert
 webrtc/package-lock.json
 __pycache__
 gym_collab.egg-info
+
+# Pycharm local config
+.idea/
+

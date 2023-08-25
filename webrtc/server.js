@@ -6,7 +6,7 @@ const commander = require('commander');
 commander
   .version('1.0.0', '-v, --version')
   .usage('[OPTIONS]...')
-  .option('--address <value>', 'IP address', '172.17.15.69')
+  .option('--address <value>', 'IP address', 'localhost')
   .option('--port <number>', 'Port', 4000)
   .option('--log', 'Log everything')
   .option('--message-loop', 'Send back messages sent')

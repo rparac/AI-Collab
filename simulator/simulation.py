@@ -9,7 +9,6 @@ import csv
 import json_numpy
 import yaml
 from scipy.spatial.transform import Rotation
-from tdw.controller import Controller
 from tdw.tdw_utils import TDWUtils
 from tdw.add_ons.object_manager import ObjectManager
 from tdw.add_ons.ui import UI
@@ -30,6 +29,9 @@ import os
 import random
 import sys
 
+from controller import Controller
+
+# from controller import Controller
 
 #Dimension of our camera view
 width = 640 
@@ -2980,6 +2982,8 @@ if __name__ == "__main__":
     #The web interface expects to get frames from camera devices. We simulate this by using v4l2loopback to create some virtual webcams to which we forward the frames generated in here
     if not args.no_virtual_cameras:
         for user in range(args.video_index,args.video_index+num_users+1): #One extra camera for the debug video
+            print(str(user))
+            print(f"num users{num_users}")
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(user)))
         for ai in range(args.video_index+num_users+1,args.video_index+num_users+1+num_ais):
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(ai)))
