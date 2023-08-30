@@ -9,6 +9,7 @@ import csv
 import json_numpy
 import yaml
 from scipy.spatial.transform import Rotation
+from tdw.controller import Controller
 from tdw.tdw_utils import TDWUtils
 from tdw.add_ons.object_manager import ObjectManager
 from tdw.add_ons.ui import UI
@@ -29,13 +30,9 @@ import os
 import random
 import sys
 
-from controller import Controller
-
-# from controller import Controller
-
 #Dimension of our camera view
-width = 640 
-height = 480 
+width = 640
+height = 480
 
 num_users = 2
 num_ais = 1

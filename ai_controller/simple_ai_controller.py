@@ -9,7 +9,7 @@ import time
 import gymnasium as gym
 
 from gym_collab.envs import AICollabEnv
-from gym_collab.envs.grid_world_env import GridWorldEnv, SimpleObservations
+from gym_collab.envs.grid_world_env import GridWorldEnv, NewObservationAdded
 
 input_to_dir = {
     "w": 0,  # up
@@ -27,21 +27,25 @@ def create_ai_collab_env() -> AICollabEnv:
 
 
 env = GridWorldEnv(create_ai_collab_env())
-env = SimpleObservations(env)
+env = NewObservationAdded(env)
 
 observation, info = env.reset()
 
 while True:
-    x = input()
+    inp = input()
+    xs = inp.split()
+    x = xs[0]
+    item = int(xs[1]) if len(xs) > 1 else 0
+    num_cells = int(xs[2]) if len(xs) > 2 else 1
     if x in input_to_dir:
         dir = input_to_dir[x]
     else:
         dir = int(x)
     action = {
         "action": dir,
-        "item": 0,
+        "item": item,
         "message": "empty",
-        "num_cells_move": 1,
+        "num_cells_move": num_cells,
         "robot": 0,
     }
 
