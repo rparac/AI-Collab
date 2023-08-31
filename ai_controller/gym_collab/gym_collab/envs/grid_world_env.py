@@ -3,7 +3,7 @@ Simplifying wrappers to make the AI collab environment results easier to use.
 """
 from dataclasses import dataclass
 import random
-from typing import Tuple, SupportsFloat, Any, Dict, Optional
+from typing import Tuple, SupportsFloat, Any, Dict, Optional, List
 
 import gymnasium as gym
 import numpy as np
@@ -20,6 +20,8 @@ empty_action = {
 }
 
 
+# TODO: create adjacent cells iterator
+
 # TODO: implement reset to get the occupancy map
 class GridWorldEnv(gym.Wrapper):
     def __init__(self, env: AICollabEnv):
@@ -33,16 +35,74 @@ class GridWorldEnv(gym.Wrapper):
         next_observation, reward, terminated, truncated, info = self._execute_and_wait(action)
 
         if not terminated and not truncated:
-            get_occupancy_map_code = 18
-            action = empty_action.copy()
-            action["action"] = get_occupancy_map_code
-            occupancy_map_obs, reward_2, terminated, truncated, info = self._execute_and_wait(action)
-            next_observation["frame"] = occupancy_map_obs["frame"]
-            next_observation["action_status"] = np.logical_or(next_observation["action_status"],
-                                                              occupancy_map_obs["action_status"])
+            info, reward_2, terminated, truncated = self._execute_get_occupancy_map(next_observation)
+            reward += reward_2
+
+        if not terminated and not truncated:
+            info, reward_2, terminated, truncated = self._execute_danger_sensing(next_observation, info["map_metadata"])
             reward += reward_2
 
         return next_observation, reward, terminated, truncated, info
+
+    def _execute_get_occupancy_map(self, next_observation):
+        get_occupancy_map_code = 18
+        action = empty_action.copy()
+        action["action"] = get_occupancy_map_code
+        occupancy_map_obs, reward_2, terminated, truncated, info = self._execute_and_wait(action)
+        next_observation["frame"] = occupancy_map_obs["frame"]
+        next_observation["action_status"] = np.logical_or(next_observation["action_status"],
+                                                          occupancy_map_obs["action_status"])
+        return info, reward_2, terminated, truncated
+
+    def _execute_danger_sensing(self, next_observation, map_metadata):
+        occupancy_map = next_observation["frame"]
+        danger_sensing_code = 17
+        action = empty_action.copy()
+        action["action"] = danger_sensing_code
+        # Assume danger sensing always succeeds
+        obs, _reward, terminated, truncated, info = self._execute_and_wait(action)
+        # next_observation["action_status"] = np.logical_or(next_observation["action_status"],
+        #                                                   occupancy_map_obs["action_status"])
+
+        pos_i, pos_j = _find_curr_agent_location(occupancy_map)
+        dirs_i = [0, 1, 0, -1]
+        dirs_j = [-1, 0, 1, 0]
+        objects_nearby = list()
+        for dir_i, dir_j in zip(dirs_i, dirs_j):
+            next_i, next_j = pos_i + dir_i, pos_j + dir_j
+            if _inbounds((len(occupancy_map), len(occupancy_map[0])), next_i, next_j):
+                idx = self._find_object_index(map_metadata, info['object_key_to_index'], (next_i, next_j))
+                if idx != -1:
+                    check_item_code = 20
+                    action = empty_action.copy()
+                    action["action"] = check_item_code
+                    action["item"] = idx
+                    obs, _reward, terminated, truncated, info = self._execute_and_wait(action)
+                    objects_nearby.append(obs["item_output"])
+
+        next_observation["nearby_obj_weight"] = 0
+        next_observation["nearby_obj_danger"] = 0
+
+        # Randomly choose which object to show the value for if there are more
+        if len(objects_nearby) > 0:
+            elem = random.choice(objects_nearby)
+            # We ignore the probability for now.
+            # Map 0 - unknown, 1 - not dangerous, 2 - dangerous -> 0 - not dangerous, 1 - dangerous
+            next_observation["nearby_obj_danger"] = elem["item_danger_level"] - 1
+            next_observation["nearby_obj_weight"] = elem["item_weight"]
+
+        return info, _reward, terminated, truncated
+
+    # Gets valid index for check_item action or -1 if none exist
+    def _find_object_index(self, map_metadata: Dict[str, List[List[Any]]], obj_key_to_idx: Dict[str, int],
+                           pos: Tuple[int, int]) -> int:
+        pos_i, pos_j = pos
+        map_key = f"{pos_i}_{pos_j}"
+        if map_key not in map_metadata:
+            return -1
+
+        object_key = map_metadata[map_key][0][0]
+        return obj_key_to_idx[object_key]
 
     def _execute_and_wait(self, action):
         next_observation, reward_sum, terminated, truncated, info = self.env.step(action)
@@ -218,10 +278,10 @@ class SimpleObservations(gym.ObservationWrapper):
             "agent_strength": -1,
             "nearby_object_weight": 0,  # TODO: implement when there is danger sensing
             "nearby_object_danger": 0,  # TODO: implement when there is danger sensing: 0 for no danger, 1 for danger
-            "agent_info": [ # TODO: implement when we know how to get robot info
+            "agent_info": [  # TODO: implement when we know how to get robot info
             ],
         },
         return obs
 
-#TODO: reward shaping
+# TODO: reward shaping
 # It would be sufficient just to put -1 whenever there is
