@@ -9,7 +9,7 @@ import time
 import gymnasium as gym
 
 from gym_collab.envs import AICollabEnv
-from gym_collab.envs.grid_world_env import GridWorldEnv, NewObservationAdded
+from gym_collab.envs.ai_collab_wrapper import MARLWrapper
 
 input_to_dir = {
     "w": 0,  # up
@@ -26,9 +26,7 @@ def create_ai_collab_env() -> AICollabEnv:
     return ai_collab_env  # type: ignore[override]
 
 
-env = GridWorldEnv(create_ai_collab_env())
-env = NewObservationAdded(env)
-
+env = MARLWrapper(create_ai_collab_env())
 observation, info = env.reset()
 
 while True:
