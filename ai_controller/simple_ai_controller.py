@@ -54,5 +54,6 @@ while True:
     #     action["action"] = 26  # wait
     #     next_observation, reward, terminated, truncated, info = env.step(action)
     #     # print(next_observation)
-    success = next_observation["action_status"][0] > 0
+    # success = next_observation["action_status"][0] > 0
+    success = False
     print(f"There was success: {success}")
