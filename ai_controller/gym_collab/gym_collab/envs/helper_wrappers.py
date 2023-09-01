@@ -251,17 +251,18 @@ class SimpleObservations(gym.Wrapper):
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[
         WrapperObsType, Dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
-        return self._map_observation(obs, info), info
+        return self._map_observation(info), info
 
     def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
-        return self._map_observation(obs, info), reward, terminated, truncated, info
+        return self._map_observation(info), reward, terminated, truncated, info
 
-    def _map_observation(self, observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
-        curr_pos, other_pos = self._find_agent_positions(observation["frame"])
+    @staticmethod
+    def _map_observation(observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
+        curr_pos, other_pos = SimpleObservations._find_agent_positions(observation["frame"])
 
-        agent_id = self._position_to_agent_id(curr_pos, info["map_metadata"])
-        agent_infos = self._get_agent_infos(other_pos, info)
+        agent_id = SimpleObservations._position_to_agent_id(curr_pos, info["map_metadata"])
+        agent_infos = SimpleObservations._get_agent_infos(other_pos, info)
         num_agents = len(agent_infos) + 1
 
         obs = {
@@ -270,20 +271,22 @@ class SimpleObservations(gym.Wrapper):
             "nearby_obj_weight": observation["nearby_obj_weight"],
             "nearby_obj_danger": observation["nearby_obj_danger"],
             "agent_infos": agent_infos,
-            "object_infos": self.get_object_infos(info["map_metadata"], num_agents),
+            "object_infos": SimpleObservations.get_object_infos(info["map_metadata"], num_agents),
         }
         return obs
 
-    def _get_agent_infos(self, other_pos: List[Tuple[int, int]], info: Dict[str, Any]):
+    @staticmethod
+    def _get_agent_infos(other_pos: List[Tuple[int, int]], info: Dict[str, Any]):
         id_pos_map = {
-            self._position_to_agent_id(pos, info["map_metadata"]): pos
+            SimpleObservations._position_to_agent_id(pos, info["map_metadata"]): pos
             for pos in other_pos
         }
         # TODO: implement when we know how to get robot help request,
         agent_infos = [AgentInfo(id_pos_map[i], need_help=False) for i in range(1, len(id_pos_map) + 1)]
         return agent_infos
 
-    def _find_agent_positions(self, world_map: np.ndarray) -> (Tuple[int, int], List[Tuple[int, int]]):
+    @staticmethod
+    def _find_agent_positions(world_map: np.ndarray) -> (Tuple[int, int], List[Tuple[int, int]]):
         other_agent_id = 3
         curr_agent_id = 5
 
@@ -296,33 +299,37 @@ class SimpleObservations(gym.Wrapper):
 
         return curr_agent_pos, other_agent_pos
 
-    def _position_to_agent_id(self, position: Tuple[int, int], map_metadata: Dict[str, List[Any]]) -> int:
+    @staticmethod
+    def _position_to_agent_id(position: Tuple[int, int], map_metadata: Dict[str, List[Any]]) -> int:
         pos_i, pos_j = position
         pos_as_str = f"{pos_i}_{pos_j}"
 
         agent_env_id = map_metadata[pos_as_str][-1]
 
-        return self.name_to_idx(agent_env_id)
+        return SimpleObservations._name_to_idx(agent_env_id)
 
-    def name_to_idx(self, name: str) -> int:
+    @staticmethod
+    def _name_to_idx(name: str) -> int:
         # ids are assigned from 'A'
         return ord(name) - ord('A')
 
-    def get_object_infos(self, map_metadata: Dict[str, List[Any]], num_agents: int) -> List[ObjectInfo]:
+    @staticmethod
+    def get_object_infos(map_metadata: Dict[str, List[Any]], num_agents: int) -> List[ObjectInfo]:
         sol = []
         for str_pos, location_info in map_metadata.items():
             # Check if current positions holds object information
             if type(location_info[0]) == list:
-                pos = self._map_key_to_pos(str_pos)
+                pos = SimpleObservations._map_key_to_pos(str_pos)
                 carried_by = np.zeros(num_agents)
                 # An agent is holding an object if both object and agent are at the same location
                 if len(location_info) > 1:
                     agent_name = location_info[1]
-                    carried_by[self.name_to_idx(agent_name)] = 1
+                    carried_by[SimpleObservations._name_to_idx(agent_name)] = 1
                 sol.append(ObjectInfo(pos=pos, carried_by=carried_by))
         return sol
 
-    def _map_key_to_pos(self, key: str) -> (int, int):
+    @staticmethod
+    def _map_key_to_pos(key: str) -> (int, int):
         vals = key.split('_')
         assert len(vals) == 2
 
