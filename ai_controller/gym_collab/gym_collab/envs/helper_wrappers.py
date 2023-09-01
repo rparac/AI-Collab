@@ -251,11 +251,11 @@ class SimpleObservations(gym.Wrapper):
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[
         WrapperObsType, Dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
-        return self._map_observation(info), info
+        return self._map_observation(obs, info), info
 
     def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
-        return self._map_observation(info), reward, terminated, truncated, info
+        return self._map_observation(obs, info), reward, terminated, truncated, info
 
     @staticmethod
     def _map_observation(observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
