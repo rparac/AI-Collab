@@ -3,7 +3,7 @@ Simplifying wrappers to make the AI collab environment results easier to use.
 """
 from dataclasses import dataclass
 import random
-from typing import Tuple, SupportsFloat, Any, Dict, List, Optional
+from typing import Tuple, SupportsFloat, Any, Dict, List, Optional, Union
 
 import gymnasium as gym
 import numpy as np
@@ -27,7 +27,8 @@ class AtomicWrapper(gym.Wrapper):
     def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         next_observation, reward_sum, terminated, truncated, info = self.env.step(action)
 
-        while not any(next_observation["action_status"][:4]) and not terminated and not truncated:
+        while not any(next_observation["action_status"][:4]) and not terminated and not truncated \
+                and action["action"] != Action.wait.value:
             next_observation, reward, terminated, truncated, info = self.env.step(wrap_action_enum(Action.wait))
             reward_sum += reward
         return next_observation, reward_sum, terminated, truncated, info
@@ -44,6 +45,7 @@ class AutomaticSensingWrapper(gym.Wrapper):
           0)
         - if there are multiple nearby objects, it randomly samples one to present to
           the agent
+    - get_messages
     """
 
     def __init__(self, env: AtomicWrapper):
@@ -90,7 +92,19 @@ class AutomaticSensingWrapper(gym.Wrapper):
             next_observation["nearby_obj_danger"] = danger_sensing_obs["nearby_obj_danger"]
             reward += reward_2
 
+        if not terminated and not truncated:
+            get_messages_obs, reward_2, terminated, truncated, messages_info = self._execute_get_messages()
+            info["messages"] = messages_info["messages"]
+            reward += reward_2
+
+
         return next_observation, reward, terminated, truncated, info
+
+    def _execute_get_messages(self):
+        get_message_obs, reward_2, terminated, truncated, info = self.env.step(
+            wrap_action_enum(Action.get_messages))
+        return get_message_obs, reward_2, terminated, truncated, info
+
 
     def _execute_get_occupancy_map(self):
         occupancy_map_obs, reward_2, terminated, truncated, info = self.env.step(
@@ -119,6 +133,9 @@ class AutomaticSensingWrapper(gym.Wrapper):
         if len(objects_nearby) > 0:
             elem = random.choice(objects_nearby)
             # We ignore the probability for now.
+            # Item danger confidence for a dangerous object - [[{'item_danger_confidence': [0.51858764], 'item_danger_level': 1, 'item_location': [3. 4.], 'item_time': [171.3572073], 'item_weight': 1}]]
+            # Item danger for a benign object - {{'item_danger_confidence': [0.59551547], 'item_danger_level': 1, 'item_location': [4. 3.], 'item_time': [40.21824908], 'item_weight': 1}
+            # Current guess is just if > 0.5
             # Map 0 - unknown, 1 - not dangerous, 2 - dangerous -> 0 - not dangerous, 1 - dangerous
             obs["nearby_obj_danger"] = elem["item_danger_level"] - 1
             obs["nearby_obj_weight"] = elem["item_weight"]
@@ -151,7 +168,7 @@ class SimpleActions(gym.Wrapper):
         7 - ask for help
     """
 
-    def __init__(self, env: AtomicWrapper):
+    def __init__(self, env: Union[AtomicWrapper, AutomaticSensingWrapper]):
         super().__init__(env)
         self.action_space = gym.spaces.Discrete(8)
         self.pick_up_code = 5
@@ -182,12 +199,11 @@ class SimpleActions(gym.Wrapper):
 
     @staticmethod
     def _get_ask_for_help_action() -> ActType:
-        send_message_action_code = 23
         broadcast_code = 0
         return {
-            "action": send_message_action_code,
+            "action": Action.send_message.value,
             "item": 0,
-            "message": "I need help",  # TODO: add more information about the object
+            "message": "Help",  # TODO: add more information about the object
             "num_cells_move": 0,
             "robot": broadcast_code,
         }
@@ -195,6 +211,9 @@ class SimpleActions(gym.Wrapper):
     # Determines in which direction the agent should grab an item
     # Returns the action code for doing so
     def _find_grab_action_code(self) -> ActType:
+        def subtract(tuple1: Tuple[int, int], tuple2: Tuple[int, int]) -> Tuple[int, int]:
+            return tuple1[0] - tuple2[0], tuple1[1] - tuple2[1]
+
         dirs_to_pick_direction = {
             (-1, 0): Action.grab_up,
             (0, 1): Action.grab_right,
@@ -202,16 +221,18 @@ class SimpleActions(gym.Wrapper):
             (0, -1): Action.grab_left,
         }
 
-        frame = self.last_observation.frame
+        frame = self.last_observation["frame"]
         pos = _find_curr_agent_location(frame)
         grid_size = (len(frame), len(frame[0]))
-        neighbour_pos = list(adjacent_cells_iterator(pos, grid_size))
+
+        neighbour_pos = [cell for cell in adjacent_cells_iterator(pos, grid_size) if frame[cell] == 2]
         if len(neighbour_pos) > 0:
             # Always check directions in a different order.
             # This will result in a random object selection if there is more than 1
             # in the vicinity.
             elem = random.choice(neighbour_pos)
-            return wrap_action_enum(dirs_to_pick_direction[elem])
+            relative_dir = subtract(pos, elem)
+            return wrap_action_enum(dirs_to_pick_direction[relative_dir])
 
         # Attempt to grab up if everything fails.
         # This will result in the same errors as an incorrect grab
@@ -244,7 +265,7 @@ class ObjectInfo:
 
 
 class SimpleObservations(gym.Wrapper):
-    def __init__(self, env: AutomaticSensingWrapper):
+    def __init__(self, env: Union[AutomaticSensingWrapper, SimpleActions]):
         super().__init__(env)
         self.env = env
 
@@ -262,8 +283,9 @@ class SimpleObservations(gym.Wrapper):
         curr_pos, other_pos = SimpleObservations._find_agent_positions(observation["frame"])
 
         agent_id = SimpleObservations._position_to_agent_id(curr_pos, info["map_metadata"])
-        agent_infos = SimpleObservations._get_agent_infos(other_pos, info)
+        agent_infos = SimpleObservations._get_agent_infos(other_pos + [curr_pos], info)
         num_agents = len(agent_infos) + 1
+        object_infos = SimpleObservations.get_object_infos(info["map_metadata"], num_agents)
 
         obs = {
             "agent_id": agent_id,
@@ -271,7 +293,7 @@ class SimpleObservations(gym.Wrapper):
             "nearby_obj_weight": observation["nearby_obj_weight"],
             "nearby_obj_danger": observation["nearby_obj_danger"],
             "agent_infos": agent_infos,
-            "object_infos": SimpleObservations.get_object_infos(info["map_metadata"], num_agents),
+            "object_infos": object_infos,
         }
         return obs
 
@@ -281,8 +303,13 @@ class SimpleObservations(gym.Wrapper):
             SimpleObservations._position_to_agent_id(pos, info["map_metadata"]): pos
             for pos in other_pos
         }
-        # TODO: implement when we know how to get robot help request,
-        agent_infos = [AgentInfo(id_pos_map[i], need_help=False) for i in range(1, len(id_pos_map) + 1)]
+        need_help_ids = set()
+        for message in info["messages"]:
+            agent_name_id, msg_str, t = message
+            agent_id = info["robot_key_to_index"][agent_name_id]
+            need_help_ids.add(agent_id)
+
+        agent_infos = [AgentInfo(id_pos_map[i], need_help=i in need_help_ids) for i in range(0, len(id_pos_map))]
         return agent_infos
 
     @staticmethod

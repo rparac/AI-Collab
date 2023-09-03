@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium.core import WrapperActType
 
 from gym_collab.envs import AICollabEnv
-from gym_collab.envs.helper_wrappers import AtomicWrapper, AutomaticSensingWrapper, SimpleObservations
+from gym_collab.envs.helper_wrappers import AtomicWrapper, AutomaticSensingWrapper, SimpleObservations, SimpleActions
 
 
 class MARLWrapper(gym.Wrapper):
@@ -10,6 +10,7 @@ class MARLWrapper(gym.Wrapper):
         super().__init__(env)
         self.env = AtomicWrapper(env)
         self.env = AutomaticSensingWrapper(self.env)
+        self.env = SimpleActions(self.env)
         self.env = SimpleObservations(self.env)
 
     def reset(self, **kwargs):
