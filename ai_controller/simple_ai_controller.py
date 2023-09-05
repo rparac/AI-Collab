@@ -27,15 +27,15 @@ def create_ai_collab_env(client_number: int) -> AICollabEnv:
 
 
 env1 = MARLWrapper(create_ai_collab_env(client_number=1))
-env2 = MARLWrapper(create_ai_collab_env(client_number=2))
+# env2 = MARLWrapper(create_ai_collab_env(client_number=2))
 observation, info = env1.reset()
-observation2, info2 = env2.reset()
+# observation2, info2 = env2.reset()
 
 while True:
     inp = input()
     xs = inp.split()
     x = xs[0]
-    env = env2 if len(xs) > 1 else env1
+    # env = env2 if len(xs) > 1 else env1
     # item = int(xs[1]) if len(xs) > 1 else 0
     num_cells = int(xs[2]) if len(xs) > 2 else 1
     if x in input_to_dir:
@@ -44,7 +44,7 @@ while True:
         dir = int(x)
 
     print(f"I have turned by pressing the {x} key")
-    next_observation, reward, terminated, truncated, info = env.step(dir)
+    next_observation, reward, terminated, truncated, info = env1.step(dir)
 
     # while not any(next_observation["action_status"][:2]):
     #     action["action"] = 26  # wait

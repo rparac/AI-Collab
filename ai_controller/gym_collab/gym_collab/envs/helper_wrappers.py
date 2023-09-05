@@ -57,54 +57,53 @@ class AutomaticSensingWrapper(gym.Wrapper):
     ) -> Tuple[WrapperObsType, Dict[str, Any]]:
         self.env.reset(seed=seed, options=options)
 
-        occupancy_map_obs, reward, terminated, truncated, obs_info = self._execute_get_occupancy_map()
-
-        if not terminated and not truncated:
-            danger_sensing_obs, reward_2, terminated, truncated, info = self._execute_danger_sensing(
-                occupancy_map_obs["frame"],
-                obs_info["map_metadata"]
-            )
-            occupancy_map_obs["nearby_obj_weight"] = danger_sensing_obs["nearby_obj_weight"]
-            occupancy_map_obs["nearby_obj_danger"] = danger_sensing_obs["nearby_obj_danger"]
-            reward += reward_2
-        return occupancy_map_obs, obs_info
+        obs, info, _reward = self._update_with_sensing_info()
+        return obs, info
 
     def step(
             self, action: WrapperActType
     ) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
 
         next_observation, reward, terminated, truncated, info = self.env.step(action)
+        next_observation, info, reward2 = self._update_with_sensing_info(terminated, truncated, next_observation, info)
 
+        return next_observation, reward + reward2, terminated, truncated, info
+
+    def _update_with_sensing_info(self, terminated=False, truncated=False, obs_to_update=None, info_to_update=None):
+        reward = 0
         if not terminated and not truncated:
             occupancy_map_obs, reward_2, terminated, truncated, obs_info = self._execute_get_occupancy_map()
-            next_observation["frame"] = occupancy_map_obs["frame"]
-            info["map_metadata"] = obs_info["map_metadata"]
-            next_observation["action_status"] = np.logical_or(next_observation["action_status"],
-                                                              occupancy_map_obs["action_status"])
+            if info_to_update is None and obs_to_update is None:
+                info_to_update = obs_info
+                obs_to_update = occupancy_map_obs
+            else:
+                info_to_update["frame"] = occupancy_map_obs["frame"]
+                info_to_update["map_metadata"] = obs_info["map_metadata"]
+                obs_to_update["action_status"] = np.logical_or(obs_to_update["action_status"],
+                                                               occupancy_map_obs["action_status"])
             reward += reward_2
-
         if not terminated and not truncated:
             danger_sensing_obs, reward_2, terminated, truncated, danger_info = self._execute_danger_sensing(
-                next_observation["frame"],
-                info["map_metadata"]
+                obs_to_update["frame"],
+                info_to_update["map_metadata"]
             )
-            next_observation["nearby_obj_weight"] = danger_sensing_obs["nearby_obj_weight"]
-            next_observation["nearby_obj_danger"] = danger_sensing_obs["nearby_obj_danger"]
+            obs_to_update["nearby_obj_weight"] = danger_sensing_obs["nearby_obj_weight"]
+            obs_to_update["nearby_obj_danger"] = danger_sensing_obs["nearby_obj_danger"]
             reward += reward_2
 
         if not terminated and not truncated:
             get_messages_obs, reward_2, terminated, truncated, messages_info = self._execute_get_messages()
-            info["messages"] = messages_info["messages"]
+            info_to_update["messages"] = messages_info["messages"]
             reward += reward_2
 
-
-        return next_observation, reward, terminated, truncated, info
+        # Update for messages looping
+        obs_info["robot_key_to_index"][self.env.robot_id] = self.env.action_space["robot"].n - 1
+        return obs_to_update, info_to_update, reward
 
     def _execute_get_messages(self):
         get_message_obs, reward_2, terminated, truncated, info = self.env.step(
             wrap_action_enum(Action.get_messages))
         return get_message_obs, reward_2, terminated, truncated, info
-
 
     def _execute_get_occupancy_map(self):
         occupancy_map_obs, reward_2, terminated, truncated, info = self.env.step(
@@ -306,7 +305,7 @@ class SimpleObservations(gym.Wrapper):
         need_help_ids = set()
         for message in info["messages"]:
             agent_name_id, msg_str, t = message
-            agent_id = info["robot_key_to_index"][agent_name_id]
+            agent_id = SimpleObservations._name_to_idx(agent_name_id)
             need_help_ids.add(agent_id)
 
         agent_infos = [AgentInfo(id_pos_map[i], need_help=i in need_help_ids) for i in range(0, len(id_pos_map))]
