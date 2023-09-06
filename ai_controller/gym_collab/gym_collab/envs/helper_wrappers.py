@@ -252,8 +252,6 @@ class SimpleActions(gym.Wrapper):
         return wrap_action_enum(new_to_old_map[action])
 
 
-
-
 class SimpleObservations(gym.Wrapper):
     def __init__(self, env: Union[AutomaticSensingWrapper, SimpleActions]):
         super().__init__(env)
@@ -278,7 +276,7 @@ class SimpleObservations(gym.Wrapper):
             "agent_id": gym.spaces.Discrete(self.env.num_agents),
             "agent_strength": self.env.observation_space["strength"],
             "nearby_obj_weight": self.env.observation_space["item_output"]["item_weight"],
-            "nearby_obj_danger": gym.spaces.Discrete(1), # is or isn't dangerous
+            "nearby_obj_danger": gym.spaces.Discrete(1),  # is or isn't dangerous
             "agent_infos": gym.spaces.Sequence(agent_info_space),
             "object_infos": gym.spaces.Sequence(object_info_space),
         })
@@ -320,10 +318,11 @@ class SimpleObservations(gym.Wrapper):
         need_help_ids = set()
         for message in info["messages"]:
             agent_name_id, msg_str, t = message
-            agent_id = SimpleObservations._name_to_idx(agent_name_id)
+            agent_id = SimpleObservations.name_to_idx(agent_name_id)
             need_help_ids.add(agent_id)
 
-        agent_infos = [SimpleObservations.agent_info(id_pos_map[i], need_help=i in need_help_ids) for i in range(0, len(id_pos_map))]
+        agent_infos = [SimpleObservations.agent_info(id_pos_map[i], need_help=i in need_help_ids) for i in
+                       range(0, len(id_pos_map))]
         return agent_infos
 
     @staticmethod
@@ -361,12 +360,16 @@ class SimpleObservations(gym.Wrapper):
 
         agent_env_id = map_metadata[pos_as_str][-1]
 
-        return SimpleObservations._name_to_idx(agent_env_id)
+        return SimpleObservations.name_to_idx(agent_env_id)
 
     @staticmethod
-    def _name_to_idx(name: str) -> int:
+    def name_to_idx(name: str) -> int:
         # ids are assigned from 'A'
         return ord(name) - ord('A')
+
+    @staticmethod
+    def idx_to_name(idx: int) -> str:
+        return chr(idx + ord('A'))
 
     @staticmethod
     def get_object_infos(map_metadata: Dict[str, List[Any]], num_agents: int) -> List[Dict[str, Any]]:
@@ -379,7 +382,7 @@ class SimpleObservations(gym.Wrapper):
                 # An agent is holding an object if both object and agent are at the same location
                 if len(location_info) > 1:
                     agent_name = location_info[1]
-                    carried_by[SimpleObservations._name_to_idx(agent_name)] = 1
+                    carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
                 sol.append(SimpleObservations.object_info(pos=pos, carried_by=carried_by))
         return sol
 
@@ -389,3 +392,39 @@ class SimpleObservations(gym.Wrapper):
         assert len(vals) == 2
 
         return int(vals[0]), int(vals[1])
+
+
+class AgentNameWrapper(gym.Wrapper):
+    """
+    Wrap an observation and action in a dictionary with agent_name.
+    This is to have consistency with Leo's work, where environments contain information about
+    all agents which are then projected to each agent
+    """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Dict({
+            SimpleObservations.idx_to_name(i): env.observation_space
+            for i in range(self.env.num_agents)
+        })
+        self.action_space = gym.spaces.Dict({
+            SimpleObservations.idx_to_name(i): env.action_space
+            for i in range(self.env.num_agents)
+        })
+
+    def reset(self, **kwargs) -> Tuple[WrapperObsType, Dict[str, Any]]:
+        old_observation, info = self.env.reset(**kwargs)
+        return self.observation(old_observation), info
+
+    def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+        old_action = self.action(action)
+        old_obs, reward, terminated, truncated, info = self.env.step(old_action)
+        return self.observation(old_obs), reward, terminated, truncated, info
+
+    def observation(self, observation: ObsType) -> WrapperObsType:
+        agent_idx = observation["agent_id"]
+        return {SimpleObservations.idx_to_name(agent_idx): observation}
+
+    def action(self, action: WrapperActType) -> ActType:
+        assert isinstance(action, dict) and len(action) == 1
+        return action[SimpleObservations.idx_to_name(0)]

@@ -30,7 +30,7 @@ class LabelingFunctionWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
 
-        self.prev_agent_locations = self.unwrapped.agent_locations
+        self.prev_obs = None
 
     @abc.abstractmethod
     def get_labels(self, obs: dict = None, prev_obs: dict = None):
@@ -38,15 +38,16 @@ class LabelingFunctionWrapper(gym.Wrapper):
 
     def step(self, action):
         observation, reward, terminated, truncated, info = super().step(action)
-        info["labels"] = self.get_labels()
-        self.prev_agent_locations = copy.deepcopy(self.agent_locations)
+        info["labels"] = self.get_labels(obs=observation, prev_obs=self.prev_obs)
+        self.prev_obs = copy.deepcopy(observation)
         return observation, reward, terminated, truncated, info
 
     def reset(self, **kwargs):
         """Resets the environment with kwargs."""
-        ret = super().reset(**kwargs)
-        self.prev_agent_locations = self.unwrapped.agent_locations
-        return ret
+        obs, info = super().reset(**kwargs)
+        info["labels"] = self.get_labels(obs=obs, prev_obs=None)
+        self.prev_obs = obs
+        return obs, info
 
 
 @dataclass

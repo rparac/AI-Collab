@@ -11,8 +11,8 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from rm_marl.algo import QRM
-from rm_marl.algo.dqn import DQN
+from .algo import QRM
+from .algo.dqn import DQN
 
 
 class Trainer:
@@ -88,8 +88,7 @@ class Trainer:
                     if dones[env_id]:
                         continue
 
-                    actions = {
-                        aid: a.action(
+                    actions = { aid: a.action(
                             self._project_obs(obs[env_id], a, aid),
                             greedy=run_config.get("greedy", True)
                             if not run_config["training"]
@@ -192,7 +191,7 @@ class Trainer:
                 self._run(self.testing_envs, {
                     "training": False,
                     "log_freq": 1,
-                    "recording_freq": 1,
+                    "recording_freq": 100000, # 1, avoid rendering with Julian's code
                     "total_episodes": 1,
                     "greedy": run_config.get("greedy", True),
                     "seed": run_config["seed"],

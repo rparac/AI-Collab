@@ -1,11 +1,12 @@
 from collections import defaultdict
 from typing import Optional
 
-import gym.spaces
+import gymnasium as gym
 import numpy as np
-from gym.utils import seeding
+from gymnasium.utils import seeding
 
 from ._base import Algo
+
 
 class QRM(Algo):
 
@@ -49,6 +50,10 @@ class QRM(Algo):
     def _recursive_to_hashable_state_(state):
         if type(state) == np.ndarray:
             return tuple(state)
+        if type(state) == list:
+            return tuple(QRM._recursive_to_hashable_state_(val) for val in state)
+        if type(state) in [int, tuple, float, bool]:
+            return state
 
         return tuple(
             sorted({k: QRM._recursive_to_hashable_state_(v) for k, v in state.items()}.items(), key=lambda i: i[0])

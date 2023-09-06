@@ -2,7 +2,8 @@ import gymnasium as gym
 from gymnasium.core import WrapperActType
 
 from gym_collab.envs import AICollabEnv
-from gym_collab.envs.helper_wrappers import AtomicWrapper, AutomaticSensingWrapper, SimpleObservations, SimpleActions
+from gym_collab.envs.helper_wrappers import AtomicWrapper, AutomaticSensingWrapper, SimpleObservations, SimpleActions, \
+    AgentNameWrapper
 
 
 class MARLWrapper(gym.Wrapper):

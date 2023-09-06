@@ -8,3 +8,8 @@ gym_collab.egg-info
 # Pycharm local config
 .idea/
 
+# ai-controller execution logs
+ai_controller/logs
+
+#tdw log
+simulator/tdw_log.txt
