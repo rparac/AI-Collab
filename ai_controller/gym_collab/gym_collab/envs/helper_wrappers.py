@@ -147,7 +147,8 @@ class AutomaticSensingWrapper(gym.Wrapper):
                            pos: Tuple[int, int]) -> int:
         pos_i, pos_j = pos
         map_key = f"{pos_i}_{pos_j}"
-        if map_key not in map_metadata:
+        # No key or sensed an agent
+        if map_key not in map_metadata or not isinstance(map_metadata[map_key][0], list):
             return -1
 
         object_key = map_metadata[map_key][0][0]
@@ -281,26 +282,32 @@ class SimpleObservations(gym.Wrapper):
             "object_infos": gym.spaces.Sequence(object_info_space),
         })
 
+        self.agent_id = None
+        self.other_agent_ids = None
+
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[
         WrapperObsType, Dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
+
+        curr_pos, other_pos = SimpleObservations._find_agent_positions(obs["frame"])
+        agent_id = SimpleObservations._pos_to_agent_id(curr_pos, info["map_metadata"])
+        other_ids = [SimpleObservations._pos_to_agent_id(pos, info["map_metadata"]) for pos in other_pos]
+        self.agent_id = agent_id
+        self.other_agent_ids = other_ids
+
         return self._map_observation(obs, info), info
 
     def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
         return self._map_observation(obs, info), reward, terminated, truncated, info
 
-    @staticmethod
-    def _map_observation(observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
-        curr_pos, other_pos = SimpleObservations._find_agent_positions(observation["frame"])
-
-        agent_id = SimpleObservations._position_to_agent_id(curr_pos, info["map_metadata"])
-        agent_infos = SimpleObservations._get_agent_infos(other_pos + [curr_pos], info)
+    def _map_observation(self, observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
+        agent_infos = self._get_agent_infos(self.other_agent_ids + [self.agent_id], info)
         num_agents = len(agent_infos) + 1
-        object_infos = SimpleObservations.get_object_infos(info["map_metadata"], num_agents)
+        object_infos = self.get_object_infos(info["map_metadata"], num_agents)
 
         obs = {
-            "agent_id": agent_id,
+            "agent_id": self.agent_id,
             "agent_strength": observation["strength"],
             "nearby_obj_weight": observation["nearby_obj_weight"],
             "nearby_obj_danger": observation["nearby_obj_danger"],
@@ -310,16 +317,17 @@ class SimpleObservations(gym.Wrapper):
         return obs
 
     @staticmethod
-    def _get_agent_infos(other_pos: List[Tuple[int, int]], info: Dict[str, Any]):
-        id_pos_map = {
-            SimpleObservations._position_to_agent_id(pos, info["map_metadata"]): pos
-            for pos in other_pos
-        }
+    def _get_agent_infos(agent_ids: List[int], info: Dict[str, Any]):
         need_help_ids = set()
         for message in info["messages"]:
             agent_name_id, msg_str, t = message
             agent_id = SimpleObservations.name_to_idx(agent_name_id)
             need_help_ids.add(agent_id)
+
+        id_pos_map = {
+            id_: SimpleObservations._agent_name_to_position(SimpleObservations.idx_to_name(id_), info["map_metadata"])
+            for id_ in agent_ids
+        }
 
         agent_infos = [SimpleObservations.agent_info(id_pos_map[i], need_help=i in need_help_ids) for i in
                        range(0, len(id_pos_map))]
@@ -354,13 +362,20 @@ class SimpleObservations(gym.Wrapper):
         return curr_agent_pos, other_agent_pos
 
     @staticmethod
-    def _position_to_agent_id(position: Tuple[int, int], map_metadata: Dict[str, List[Any]]) -> int:
+    def _pos_to_agent_id(position: Tuple[int, int], map_metadata: Dict[str, List[Any]]) -> int:
         pos_i, pos_j = position
         pos_as_str = f"{pos_i}_{pos_j}"
 
         agent_env_id = map_metadata[pos_as_str][-1]
 
         return SimpleObservations.name_to_idx(agent_env_id)
+
+    @staticmethod
+    def _agent_name_to_position(agent_id: str, map_metadata: Dict[str, List[Any]]):
+        for pos_str, val in map_metadata.items():
+            if agent_id in val:
+                return SimpleObservations._map_key_to_pos(pos_str)
+        return -1, -1
 
     @staticmethod
     def name_to_idx(name: str) -> int:
