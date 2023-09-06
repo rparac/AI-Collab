@@ -395,8 +395,9 @@ class SimpleObservations(gym.Wrapper):
                 pos = SimpleObservations._map_key_to_pos(str_pos)
                 carried_by = np.zeros(num_agents)
                 # An agent is holding an object if both object and agent are at the same location
-                if len(location_info) > 1:
-                    agent_name = location_info[1]
+                # Also need to mitigate the case when two objects are at the same location
+                if len(location_info) > 1 and isinstance(location_info[-1], str):
+                    agent_name = location_info[-1]
                     carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
                 sol.append(SimpleObservations.object_info(pos=pos, carried_by=carried_by))
         return sol
