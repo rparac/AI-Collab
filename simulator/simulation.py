@@ -2434,9 +2434,10 @@ class Simulation(Controller):
             #print(commands)
             
             
-            if num_users >= 5:
-                commands.append({"$type": "step_physics", "frames": 1})
-            
+            if num_users >= 5 or True:
+                # commands.append({"$type": "step_physics", "frames": 1}) 5
+                commands.append({"$type": "step_physics", "frames": 5})
+
             try:
                 
                 resp = self.communicate(commands)
