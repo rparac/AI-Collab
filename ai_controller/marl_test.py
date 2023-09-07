@@ -15,7 +15,6 @@ from rm_marl.trainer import Trainer
 
 BASE_PATH = os.path.join(os.path.dirname(__file__), "data/ai-collab")
 
-
 def create_ai_collab_env(client_number: int) -> AICollabEnv:
     ai_collab_env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=True, view_radius=50, skip_frames=10,
                              client_number=client_number,

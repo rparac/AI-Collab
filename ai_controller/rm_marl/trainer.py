@@ -201,6 +201,12 @@ class Trainer:
                 }, logger)
 
 
+    # Custom saving for cloudpickle as Julian's environment cannot be saved
+    def __reduce__(self):
+        # The environments should be recreated and reassigned to the Trainer
+        return self.__class__, (dict(), dict(), self.agents)
+
+
     @staticmethod
     def compute_q_fun_diff(q_true: np.ndarray, env_agents: Dict[str, "RewardMachineAgent"]) -> np.float64:
         diffs = []
