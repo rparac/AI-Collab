@@ -1,7 +1,6 @@
-import itertools
 import random
 
-import gym
+import gymnasium
 import numpy as np
 import pygame
 
@@ -18,27 +17,27 @@ class SimpleEnv(BaseGridEnv):
         self.current_step = 0
         self.max_steps = max_steps
 
-        self.unflatten_observation_space = gym.spaces.Dict({
-            id_: gym.spaces.Dict({
-                "location": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                **{id_: gym.spaces.Box(0, size - 1, shape=(2,), dtype=int)
+        self.unflatten_observation_space = gymnasium.spaces.Dict({
+            id_: gymnasium.spaces.Dict({
+                "location": gymnasium.spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                **{id_: gymnasium.spaces.Box(0, size - 1, shape=(2,), dtype=int)
                    for id_ in self.button_locations.keys()}
             })
-            for id_ in self.agent_locations.keys()
+            for id_ in self.unwrapped.agent_locations.keys()
         })
         #SB3 doesn't like nested obs space so we flatten it
-        self.observation_space = gym.spaces.Dict({
-            k: gym.spaces.utils.flatten_space(v)
+        self.observation_space = gymnasium.spaces.Dict({
+            k: gymnasium.spaces.utils.flatten_space(v)
             for k, v in self.unflatten_observation_space.items()
         })
 
     def _get_obs(self):
         return {
-            agent_id: gym.spaces.utils.flatten(
+            agent_id: gymnasium.spaces.utils.flatten(
                 self.unflatten_observation_space[agent_id], 
                 {"location": loc, **self.button_locations}
             )
-            for agent_id, loc in self.agent_locations.items()
+            for agent_id, loc in self.unwrapped.agent_locations.items()
         }
 
     def _get_info(self):
@@ -73,7 +72,7 @@ class SimpleEnv(BaseGridEnv):
             canvas.blit(img, self.pix_square_size * (pos + 0.25))
 
     def _can_enter(self, new_pos):
-        for label, positions in self.postions_by_type("W").items():
+        for label, positions in self.unwrapped.postions_by_type("W").items():
             if tuple(new_pos) in positions:
                 return False
         return True
@@ -108,8 +107,8 @@ class SimpleEnv(BaseGridEnv):
         return obs, info
 
     def _is_button_pressed(self, button_label):
-        for agent_loc in self.agent_locations.values():
-            for pos in self.postions_by_type(button_label).values():
+        for agent_loc in self.unwrapped.agent_locations.values():
+            for pos in self.unwrapped.postions_by_type(button_label).values():
                 if tuple(agent_loc) in pos:
                     return True
         return False
@@ -119,10 +118,10 @@ class SimpleEnv(BaseGridEnv):
         for aid, action in actions.items():
             direction = self._action_to_direction[self.Actions(action)]
             new_agent_pos = np.clip(
-                self.agent_locations[aid] + direction, 0, self.size - 1
+                self.unwrapped.agent_locations[aid] + direction, 0, self.size - 1
             )
             if self._can_enter(new_agent_pos):
-                self.positions[tuple(self.agent_locations[aid])].remove(aid)
+                self.positions[tuple(self.unwrapped.agent_locations[aid])].remove(aid)
                 self.positions[tuple(new_agent_pos)].append(aid)
 
         terminated = False
@@ -144,12 +143,12 @@ class SimpleEnv(BaseGridEnv):
 class SimpleEnvLabellingFunctionWrapper(LabelingFunctionWrapper):
     def get_labels(self, obs: dict = None, prev_obs: dict = None):
         """Returns a modified observation."""
-        agent_locations = obs or self.agent_locations
+        agent_locations = obs or self.unwrapped.agent_locations
         prev_agent_locations = prev_obs or self.prev_agent_locations
         labels = []
 
-        by_positions = self.postions_by_type("B").get("BY", [])
-        br_positions = self.postions_by_type("B").get("BR", [])
+        by_positions = self.unwrapped.postions_by_type("B").get("BY", [])
+        br_positions = self.unwrapped.postions_by_type("B").get("BR", [])
 
         if self._agent_has_moved_to(
                 "A1", prev_agent_locations, agent_locations, by_positions

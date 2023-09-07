@@ -1,7 +1,7 @@
 from .buttons import ButtonsEnv
 from .cookie import CookieEnv
 from .rendezvous import RendezVousEnv
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 register(
     id='rm-marl/Buttons-v0',

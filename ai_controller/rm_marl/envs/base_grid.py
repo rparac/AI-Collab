@@ -3,12 +3,12 @@ import copy
 from collections import defaultdict
 from enum import Enum
 
-import gym
+import gymnasium
 import numpy as np
 import pygame
 
 
-class BaseGridEnv(gym.Env):
+class BaseGridEnv(gymnasium.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     COLOR_MAPPING = {
@@ -46,7 +46,7 @@ class BaseGridEnv(gym.Env):
         self.window = None
         self.clock = None
 
-        self.action_space = gym.spaces.Discrete(len(self.Actions))
+        self.action_space = gymnasium.spaces.Discrete(len(self.Actions))
         self._action_to_direction = {
             self.Actions.up: np.array([0, -1]),
             self.Actions.right: np.array([1, 0]),
@@ -55,9 +55,9 @@ class BaseGridEnv(gym.Env):
             self.Actions.none: np.array([0, 0]),
         }
 
-        self.observation_space = gym.spaces.Dict(
+        self.observation_space = gymnasium.spaces.Dict(
             {
-                a: gym.spaces.Box(0, size - 1, shape=(2,), dtype=int)
+                a: gymnasium.spaces.Box(0, size - 1, shape=(2,), dtype=int)
                 for a in self.agent_locations.keys()
             }
         )

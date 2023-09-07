@@ -1,10 +1,10 @@
 import copy
 import datetime as dt
 import os
+import warnings
 from collections import defaultdict
 from typing import Dict
 
-import gym
 # import joblib
 import cloudpickle
 import numpy as np
@@ -151,9 +151,12 @@ class Trainer:
                     infos[env_id] = info
                     dones[env_id] = interrupt_episode
 
-                    mean_loss = np.nanmean(agent_loss)
-                    if agent_loss and not np.isnan(mean_loss):
-                        episode_losses[env_id].append(mean_loss)
+                    if agent_loss:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", category=RuntimeWarning)
+                            mean_loss = np.nanmean(agent_loss)
+                        if not np.isnan(mean_loss):
+                            episode_losses[env_id].append(mean_loss)
 
             # track metrics and log them in TB
             for env_id in envs.keys():
@@ -215,10 +218,13 @@ class Trainer:
             assert isinstance(algo, DQN)
 
             initial_state, initial_u = {'A1': np.array([1,5,5,3,1,1])}, 0
+            # TODO: check if the output of the network is not normalized (i.e. are we comparing apples with apples? are the 2 q values on the same scale?)
             net_q_value = algo.get_q_values(initial_state, initial_u)
             table_q_values = q_true[initial_u][QRM._to_hashable_state_(initial_state)]
 
-            diffs.append(np.abs(np.mean(net_q_value - table_q_values)))
+            # FIXME: should this be np.mean(np.abs(...)) ?
+            # diffs.append(np.abs(np.mean(net_q_value - table_q_values)))
+            diffs.append(np.mean(np.abs(net_q_value - table_q_values)))
         return np.mean(diffs)
 
     @staticmethod
@@ -258,7 +264,7 @@ class Trainer:
 
     @staticmethod
     def _counterfactual_update(env, agent, state, current_u, action, done, next_state):
-        labels = env.get_labels(next_state, state)
+        labels = env.get_wrapper_attr('get_labels')(next_state, state)
 
         if not labels:
             return

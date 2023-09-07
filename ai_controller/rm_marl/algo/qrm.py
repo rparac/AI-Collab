@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Optional
 
-import gymnasium as gym
+import gymnasium.spaces
 import numpy as np
 from gymnasium.utils import seeding
 
@@ -14,14 +14,14 @@ class QRM(Algo):
 
     def __init__(
         self,
-        action_space: "gym.spaces.Space" = None,
+        action_space: "gymnasium.spaces.Space" = None,
         epsilon: float = 0.0,
         temperature: float = 50.0,
         alpha: float = 0.8,
         gamma: float = 0.9,
         seed: int = 123,
     ):
-        assert isinstance(action_space, gym.spaces.Discrete)
+        assert isinstance(action_space, gymnasium.spaces.Discrete)
         self.action_space = action_space
         self.epsilon = epsilon
         self.temperature = temperature

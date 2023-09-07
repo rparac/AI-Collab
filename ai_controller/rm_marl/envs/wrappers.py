@@ -1,19 +1,17 @@
 import abc
 import copy
 from dataclasses import dataclass
-import os
 from enum import Enum
-from itertools import groupby
 from typing import TYPE_CHECKING
 
-import gym
-from gym.wrappers import RecordEpisodeStatistics, TimeLimit
+import gymnasium
+from gymnasium.wrappers import RecordEpisodeStatistics, TimeLimit
 
 if TYPE_CHECKING:
     from ..reward_machine import RewardMachine
 
 
-class NumberStepsDiscountedRewardWrapper(gym.Wrapper):
+class NumberStepsDiscountedRewardWrapper(gymnasium.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = super().step(action)
 
@@ -26,8 +24,8 @@ class NumberStepsDiscountedRewardWrapper(gym.Wrapper):
         return observation, reward, terminated, truncated, info
 
 
-class LabelingFunctionWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env):
+class LabelingFunctionWrapper(gymnasium.Wrapper):
+    def __init__(self, env: gymnasium.Env):
         super().__init__(env)
 
         self.prev_obs = None
@@ -57,10 +55,10 @@ class RandomLabelingConfig:
     env_update: callable
 
 
-class RandomLabelingFunctionWrapper(gym.Wrapper):
+class RandomLabelingFunctionWrapper(gymnasium.Wrapper):
 
 
-    def __init__(self, env: gym.Env, random_events: dict):
+    def __init__(self, env: gymnasium.Env, random_events: dict):
         """
         random_event: {event: (probability, function(env))}
         """
@@ -107,14 +105,14 @@ class RandomLabelingFunctionWrapper(gym.Wrapper):
         return True
 
 
-class RewardMachineWrapper(gym.Wrapper):
+class RewardMachineWrapper(gymnasium.Wrapper):
     class LabelMode(Enum):
         ALL = 0
         RM = 1
         STATE = 2
 
     def __init__(
-        self, env: gym.Env, rm: "RewardMachine", label_mode: LabelMode = LabelMode.ALL
+        self, env: gymnasium.Env, rm: "RewardMachine", label_mode: LabelMode = LabelMode.ALL
     ):
         """
         label_mode:
@@ -168,8 +166,8 @@ class RewardMachineWrapper(gym.Wrapper):
         return obs, info
 
 
-class SingleAgentEnvWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env, agent_id: str):
+class SingleAgentEnvWrapper(gymnasium.Wrapper):
+    def __init__(self, env: gymnasium.Env, agent_id: str):
         self.agent_id = agent_id
 
         super().__init__(env)

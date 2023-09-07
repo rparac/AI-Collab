@@ -102,6 +102,7 @@ class DQN(OffPolicyAlgorithm):
             seed: Optional[int] = None,
             device: Union[th.device, str] = "auto",
             _init_setup_model: bool = True,
+            total_timesteps: int = 1000
     ) -> None:
         super().__init__(
             policy,
@@ -152,8 +153,6 @@ class DQN(OffPolicyAlgorithm):
         if _init_setup_model:
             self._setup_model()
 
-        # TODO: parametrize
-        total_timesteps = 1000
         self._setup_learn(total_timesteps)
 
         self._last_obs = {
@@ -305,8 +304,6 @@ class DQN(OffPolicyAlgorithm):
         return action, state
 
     def learn(self, state, u, action, reward, done, next_state, next_u):
-        self.policy.set_training_mode(False)
-
         self.num_timesteps += 1
 
         # TODO make this cleaner
@@ -329,16 +326,17 @@ class DQN(OffPolicyAlgorithm):
                 # Log training infos
                 # if log_interval is not None and self._episode_num % log_interval == 0:
                 #     self._dump_logs()
-
+        loss = np.nan
         if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts and self.num_timesteps % self.train_freq.frequency == 0:
             # If no `gradient_steps` is specified,
             # do as many gradients steps as steps performed during the rollout
             gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else self.train_freq.frequency
             # Special case when the user passes `gradient_steps=0`
             if gradient_steps > 0:
-                return self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
+                loss = self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
 
-        return np.nan
+        self.policy.set_training_mode(False)
+        return loss
 
     # Debug method for training
     def get_q_values(self, state, u):
