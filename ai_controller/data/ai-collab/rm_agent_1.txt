@@ -1,9 +1,8 @@
 0 # initial state
 (0, 1, 'a1d') # agent1 senses a dangerous object
-(1, 0, '~a1d') # agent1 stops sensing a dangerous object
+(1, 0, '~a1d,~a1l') # agent1 stops sensing a dangerous object
 (1, 2, 'a1l') # agent1 lifts the dangerous object
-(2, 1, '~a1l') # agent1 drops the dangerous object
-(2, 3, 'a1z') # agent1 enters the zone
-(3, 2, '~a1z') # agent1 exits the zone
-(3, 4, '~a1l') # agent1 drops the dangerous object
-(4, 4, 'True') # state 4 is an absorbing state
+(2, 1, '~a1l,~a1z') # agent1 drops the dangerous object
+(2, 3, 'a1l,a1z') # agent1 enters the zone
+(3, 2, 'a1l,~a1z') # agent1 exits the zone
+(3, 0, '~a1l') # agent1 drops the dangerous object in the zone

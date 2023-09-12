@@ -1,0 +1,8 @@
+0 # initial state
+(0, 1, 'a2d') # agent2 senses a dangerous object
+(1, 0, '~a2d,~a2l') # agent2 stops sensing a dangerous object
+(1, 2, 'a2l') # agent2 lifts the dangerous object
+(2, 1, '~a2l,~a2z') # agent2 drops the dangerous object
+(2, 3, 'a2l,a2z') # agent2 enters the zone
+(3, 2, 'a2l,~a2z') # agent2 exits the zone
+(3, 0, '~a2l') # agent2 drops the dangerous object in the zone
