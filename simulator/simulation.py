@@ -293,7 +293,10 @@ class Simulation(Controller):
         #pdb.set_trace()
 
         
-        self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
+        # self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
+        # Roko/Leo experiment. Fix spawn location for now
+        self.ai_spawn_positions = [{"x": -0.5, "y": 0, "z": 1.5}]
+        # self.ai_spawn_positions = [{"x": -3, "y": 0, "z": 1.1}, {"x": -5, "y": 0, "z": 1.1}]
         self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
 
@@ -516,7 +519,7 @@ class Simulation(Controller):
                     self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
                     self.ai_magnebots[ai_agent_idx].centered_view = int(centered)
                     self.ai_magnebots[ai_agent_idx].skip_frames = int(skip_frames)
-                   
+
                 #Reset environment
                 @self.sio.event 
                 def reset():
@@ -775,10 +778,8 @@ class Simulation(Controller):
                          "axis": "pitch"}]
                          
 
-            
-            
 
-                                       
+
 
         elif self.scenario == 1:
             self.scenario_size = 20
@@ -823,9 +824,35 @@ class Simulation(Controller):
                         #{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14}]},
                         {"$type": "set_floor_color", "color": {"r": 1, "g": 1, "b": 1, "a": 1}},
                         {"$type": "set_proc_gen_walls_color", "color": {"r": 1, "g": 1, "b": 0, "a": 1.0}}]
-        
-        
-            
+        elif self.scenario == 2:
+            self.scenario_size = 8
+            self.wall_length = 6
+
+            self.walls = []
+
+            commands = [
+                # {'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'},
+                {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                TDWUtils.create_empty_room(self.scenario_size, self.scenario_size),
+                self.get_add_material("parquet_long_horizontal_clean",
+                                      library="materials_high.json"),
+                {"$type": "set_screen_size",
+                 "width": width,  # 640,
+                 "height": height},  # 480},
+                {"$type": "rotate_directional_light_by",
+                 "angle": 30,
+                 "axis": "pitch"},
+                # {"$type": "create_interior_walls", "walls": [*wall1_1, *wall1_2]},
+                # {"$type": "create_interior_walls", "walls": [*wall2_1, *wall2_2]},
+                # {"$type": "create_interior_walls", "walls": [*wall3_1, *wall3_2]},
+                # {"$type": "create_interior_walls", "walls": [*wall4_1, *wall4_2]},
+                # {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6}]},
+                # {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6}]},
+                # {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14}]},
+                # {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14}]},
+                {"$type": "set_floor_color", "color": {"r": 1, "g": 1, "b": 1, "a": 1}},
+                {"$type": "set_proc_gen_walls_color", "color": {"r": 1, "g": 1, "b": 0, "a": 1.0}}]
+
             #self.communicate(commands)
             
             #commands = [{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]}]
@@ -967,7 +994,7 @@ class Simulation(Controller):
 
             final_coords = {objm: [] for objm in object_models.keys()}
 
-            
+            locations = [[5.5, 5.5], [5.5, 7.5]]
 
             for m in modifications:
                 possible_locations_temp = possible_locations.copy()
@@ -1016,9 +1043,9 @@ class Simulation(Controller):
 
 
 
-        
 
-        
+
+
             #Create environment objects
             
             
@@ -1079,9 +1106,31 @@ class Simulation(Controller):
                                              mass=1000,
                                              scale_mass=False,
                                              rotation={"x": 0, "y": 0, "z": 0}))
-        
-        
-            
+
+        elif self.scenario == 2:
+            danger_prob = self.cfg['danger_prob'] * 100  # 0.3 #1.0 #0.3
+
+            # iron_box is the name of the model used in tdw
+            final_coords = {'iron_box': []}
+
+            locations = [[2.5, 1.5], [-2.5, 1.5]]
+            for loc in locations:
+                final_coords['iron_box'].append(np.array(loc))
+
+            object_index = 0
+            for fc in final_coords.keys():
+                for c in final_coords[fc]:
+                    weight = 1
+                    danger_level = 2
+
+                    try:
+                        commands.extend(
+                            self.instantiate_object(fc, {"x": c[0], "y": 0, "z": c[1]}, {"x": 0, "y": 0, "z": 0}, 1000,
+                                                    danger_level, weight, object_index))
+                    except:
+                        pdb.set_trace()
+                    object_index += 1
+
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())     
         
@@ -2434,9 +2483,9 @@ class Simulation(Controller):
             #print(commands)
             
             
-            if num_users >= 5 or True:
+            if num_users >= 5:
                 # commands.append({"$type": "step_physics", "frames": 1}) 5
-                commands.append({"$type": "step_physics", "frames": 5})
+                commands.append({"$type": "step_physics", "frames": 1})
 
             try:
                 
@@ -2949,7 +2998,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
     parser.add_argument('--create-video', action='store_true', help='Create videos for all views')
-    parser.add_argument('--scenario', type=int, default=1, help='Choose scenario')
+    parser.add_argument('--scenario', type=int, default=2, help='Choose scenario')
     parser.add_argument('--log', action='store_true', help="Log occupancy maps + create videos")
     parser.add_argument('--showall', action='store_true', help="Show everything in the top view")
     parser.add_argument('--single-weight', type=int, default=0, help="Make all objects of the specified weight")

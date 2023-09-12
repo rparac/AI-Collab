@@ -35,6 +35,7 @@ while True:
     inp = input()
     xs = inp.split()
     x = xs[0]
+    y = len(xs) > 1
     # env = env2 if len(xs) > 1 else env1
     # item = int(xs[1]) if len(xs) > 1 else 0
     num_cells = int(xs[2]) if len(xs) > 2 else 1
@@ -44,7 +45,10 @@ while True:
         dir = int(x)
 
     print(f"I have turned by pressing the {x} key")
+    # if y:
     next_observation, reward, terminated, truncated, info = env1.step(dir)
+    # else:
+    #     next_observation, reward, terminated, truncated, info = env2.step(dir)
 
     # while not any(next_observation["action_status"][:2]):
     #     action["action"] = 26  # wait

@@ -77,7 +77,7 @@ class AutomaticSensingWrapper(gym.Wrapper):
                 info_to_update = obs_info
                 obs_to_update = occupancy_map_obs
             else:
-                info_to_update["frame"] = occupancy_map_obs["frame"]
+                obs_to_update["frame"] = occupancy_map_obs["frame"]
                 info_to_update["map_metadata"] = obs_info["map_metadata"]
                 obs_to_update["action_status"] = np.logical_or(obs_to_update["action_status"],
                                                                occupancy_map_obs["action_status"])
@@ -166,6 +166,8 @@ class SimpleActions(gym.Wrapper):
         5 - pick up
         6 - drop
         7 - ask for help
+    Important: up/right/down/left correspond to directions in the occupancy
+    map which is for some reason mirroed image of the simulator
     """
 
     def __init__(self, env: Union[AtomicWrapper, AutomaticSensingWrapper]):
@@ -244,10 +246,10 @@ class SimpleActions(gym.Wrapper):
     def _map_action_code(action: WrapperActType) -> ActType:
         new_to_old_map = {
             0: Action.wait,  # do nothing
-            1: Action.move_up,  # up
-            2: Action.move_right,  # right
-            3: Action.move_down,  # down
-            4: Action.move_left,  # left
+            3: Action.move_up,  # up
+            4: Action.move_right,  # right
+            1: Action.move_down,  # down
+            2: Action.move_left,  # left
             6: Action.drop_object,  # drop
         }
         return wrap_action_enum(new_to_old_map[action])

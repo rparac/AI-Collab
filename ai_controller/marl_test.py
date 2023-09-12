@@ -1,15 +1,15 @@
 import os
 
 import gymnasium as gym
-from gymnasium.wrappers import RecordEpisodeStatistics
-
 from gym_collab.envs import AICollabEnv
 from gym_collab.envs.ai_collab_wrapper import MARLWrapper
 from gym_collab.envs.helper_wrappers import AgentNameWrapper
+from gymnasium.wrappers import RecordEpisodeStatistics
+
 from rm_marl.agent import RewardMachineAgent
-from rm_marl.algo import QRM
-from rm_marl.envs.wrappers import SingleAgentEnvWrapper, RewardMachineWrapper
+from rm_marl.algo import DQN
 from rm_marl.envs.ai_collab import AICollabLabellingFunctionWrapper
+from rm_marl.envs.wrappers import SingleAgentEnvWrapper, RewardMachineWrapper
 from rm_marl.reward_machine import RewardMachine
 from rm_marl.trainer import Trainer
 
@@ -38,6 +38,7 @@ trainer_run_config = {
     "recording_freq": 100000,  # avoid triggering it because Julian doesn't support render
     "seed": 123,
     "name": "ai-collab-exp1",
+
     "show_q_function_diff": False,
     "q_true": None,
 }
@@ -49,7 +50,17 @@ env = MARLWrapper(collab_env)
 
 # QRM must work with Discrete action space, so we pass it through here
 agent_dict = {
-    agent_key: RewardMachineAgent(agent_key, rm, algo_cls=QRM, algo_kws={"action_space": env.action_space})
+    agent_key: RewardMachineAgent(agent_key, rm, algo_cls=DQN,
+                                  algo_kws={
+                                      "policy": "MultiInputPolicy",
+                                      "env": env,
+                                      "seed": trainer_run_config["seed"],
+                                      "total_timesteps": trainer_run_config["total_episodes"] * 250,
+                                      "train_freq": 200,
+                                      "learning_starts": 100,
+                                      "batch_size": 32,
+                                      "gradient_steps": 2,
+                                  })
 }
 
 env = AgentNameWrapper(env)
