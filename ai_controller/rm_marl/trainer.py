@@ -22,6 +22,7 @@ class Trainer:
         self.agents = agents
 
         self.total_steps = 0
+        self.test_episodes = 0
 
     def run(self, run_config: dict):
         log_dir = os.path.join(
@@ -51,6 +52,9 @@ class Trainer:
         _ = [a.set_log_folder(os.path.join(logger.log_dir, aid)) for aid, a in self.agents.items()]
 
         for episode in tqdm(range(1, 1 + run_config["total_episodes"])):
+            if not run_config["training"]:
+                self.test_episodes += 1
+
             episode_losses = defaultdict(list)
             episode_frames = defaultdict(list)
 
@@ -88,25 +92,28 @@ class Trainer:
                     if dones[env_id]:
                         continue
 
-                    actions = { aid: a.action(
-                            self._project_obs(obs[env_id], a, aid),
-                            greedy=run_config.get("greedy", True)
-                            if not run_config["training"]
-                            else False,
-                        )
+                    actions = {aid: a.action(
+                        self._project_obs(obs[env_id], a, aid),
+                        greedy=run_config.get("greedy", True)
+                        if not run_config["training"]
+                        else False,
+                        # training=run_config["training"],
+                    )
                         for aid, a in env_agents[env_id].items()
                     }
                     next_obs, reward, terminated, truncated, info = env.step(actions)
-                    
+
                     done = terminated or truncated
 
                     labels = info["labels"]
                     agent_labels = {}
-                    _ = [agent_labels.update(self._project_labels(labels, a, aid)) for aid, a in env_agents[env_id].items()]
+                    _ = [agent_labels.update(self._project_labels(labels, a, aid)) for aid, a in
+                         env_agents[env_id].items()]
 
                     if run_config["synchronize"]:
                         synchronized_labels = self._synchronize(shared_events[env_id], agent_labels)
-                        assert all(agent_labels[aid] == synchronized_labels[aid] for aid in env_agents[env_id].keys()), f"Not synchronized!! {agent_labels}, {synchronized_labels}"
+                        assert all(agent_labels[aid] == synchronized_labels[aid] for aid in env_agents[
+                            env_id].keys()), f"Not synchronized!! {agent_labels}, {synchronized_labels}"
                     else:
                         synchronized_labels = agent_labels
 
@@ -130,8 +137,8 @@ class Trainer:
                             if interrupt:
                                 interrupt_episode = True
                                 info["episode"] = {
-                                    "l": steps_count,
-                                    "r": reward
+                                    "l": env.get_wrapper_attr('episode_lengths'),
+                                    "r": env.get_wrapper_attr('episode_returns')
                                 }
                                 break
 
@@ -170,31 +177,35 @@ class Trainer:
                 if episode % run_config["log_freq"] == 0:
                     if losses[env_id]:
                         logger.add_scalar(
-                            f"{prefix}/loss/{env_id}", np.mean(losses[env_id]), self.total_steps
+                            f"{prefix}/loss/{env_id}", np.mean(losses[env_id][-run_config["log_freq"]:]),
+                            episode if run_config["training"] else self.test_episodes
                         )
                     logger.add_scalar(
-                        f"{prefix}/num_steps/{env_id}", np.mean(steps[env_id]), self.total_steps
+                        f"{prefix}/num_steps/{env_id}", np.mean(steps[env_id][-run_config["log_freq"]:]),
+                        episode if run_config["training"] else self.test_episodes
                     )
                     logger.add_scalar(
-                        f"{prefix}/reward/{env_id}", np.mean(rewards[env_id]), self.total_steps
+                        f"{prefix}/reward/{env_id}", np.mean(rewards[env_id][-run_config["log_freq"]:]),
+                        episode if run_config["training"] else self.test_episodes
                     )
                     if run_config["show_q_function_diff"]:
                         diff = self.compute_q_fun_diff(run_config["q_true"], env_agents[env_id])
                         logger.add_scalar(
-                            f"{prefix}/q_function_diff/{env_id}", diff, self.total_steps
+                            f"{prefix}/q_function_diff/{env_id}", diff,
+                            episode if run_config["training"] else self.test_episodes
                         )
 
                 if episode_frames[env_id]:
                     video = np.array(episode_frames[env_id]).transpose(0, 3, 1, 2)[
-                        np.newaxis, :
-                    ]
+                            np.newaxis, :
+                            ]
                     logger.add_video(f"{prefix}/replay/{env_id}", video, self.total_steps)
 
             if run_config["training"] and episode % run_config["testing_freq"] == 0:
                 self._run(self.testing_envs, {
                     "training": False,
                     "log_freq": 1,
-                    "recording_freq": 100000, # 1, avoid rendering with Julian's code
+                    "recording_freq": 1,
                     "total_episodes": 1,
                     "greedy": run_config.get("greedy", True),
                     "seed": run_config["seed"],
@@ -203,12 +214,10 @@ class Trainer:
                     "q_true": run_config["q_true"],
                 }, logger)
 
-
     # Custom saving for cloudpickle as Julian's environment cannot be saved
     def __reduce__(self):
         # The environments should be recreated and reassigned to the Trainer
         return self.__class__, (dict(), dict(), self.agents)
-
 
     @staticmethod
     def compute_q_fun_diff(q_true: np.ndarray, env_agents: Dict[str, "RewardMachineAgent"]) -> np.float64:
@@ -217,7 +226,7 @@ class Trainer:
             algo = agent.algo
             assert isinstance(algo, DQN)
 
-            initial_state, initial_u = {'A1': np.array([1,5,5,3,1,1])}, 0
+            initial_state, initial_u = {'A1': np.array([1, 5, 5, 3, 1, 1])}, 0
             # TODO: check if the output of the network is not normalized (i.e. are we comparing apples with apples? are the 2 q values on the same scale?)
             net_q_value = algo.get_q_values(initial_state, initial_u)
             table_q_values = q_true[initial_u][QRM._to_hashable_state_(initial_state)]
@@ -244,7 +253,7 @@ class Trainer:
         shared_events = {}
         for aid1, agent1 in env_agents.items():
             for aid2, agent2 in env_agents.items():
-                if aid1 >= aid2: 
+                if aid1 >= aid2:
                     continue
                 intersection = set(agent1.rm.get_valid_events()).intersection(agent2.rm.get_valid_events())
                 shared_events[tuple(sorted([aid1, aid2]))] = intersection
@@ -259,12 +268,12 @@ class Trainer:
                 if not all(e in agent_labels[aid] for aid in (aid1, aid2)):
                     agent_labels[aid1] = tuple(l for l in agent_labels[aid1] if l != e)
                     agent_labels[aid2] = tuple(l for l in agent_labels[aid2] if l != e)
-        
+
         return agent_labels
 
     @staticmethod
     def _counterfactual_update(env, agent, state, current_u, action, done, next_state):
-        labels = env.get_wrapper_attr('get_labels')(next_state, state)
+        labels = env.get_labels(next_state, state)
 
         if not labels:
             return

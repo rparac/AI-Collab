@@ -105,14 +105,22 @@ class RandomLabelingFunctionWrapper(gymnasium.Wrapper):
         return True
 
 
-class RewardMachineWrapper(gymnasium.Wrapper):
+class AutomataWrapper(gymnasium.Wrapper):
     class LabelMode(Enum):
         ALL = 0
         RM = 1
         STATE = 2
 
+    class TerminationMode(Enum):
+        RM = 0
+        ENV = 1
+    
     def __init__(
-        self, env: gymnasium.Env, rm: "RewardMachine", label_mode: LabelMode = LabelMode.ALL
+        self, 
+            env: gymnasium.Env, 
+            rm: "RewardMachine", 
+            label_mode: LabelMode = LabelMode.ALL,
+            termination_mode: TerminationMode = TerminationMode.RM
     ):
         """
         label_mode:
@@ -123,6 +131,7 @@ class RewardMachineWrapper(gymnasium.Wrapper):
         assert hasattr(env, "get_labels"), "The LabelingFunctionWrapper is required"
 
         self.label_mode = label_mode
+        self.termination_mode = termination_mode
 
         self.rm = rm
         self.u = self.rm.u0
@@ -140,24 +149,32 @@ class RewardMachineWrapper(gymnasium.Wrapper):
             return event in self.rm.get_valid_events(u)
 
     def step(self, action):
-        observation, _reward, _terminated, truncated, info = super().step(action)
+        observation, reward, terminated, truncated, info = super().step(action)
         info["labels"] = self.filter_labels(info["labels"], self.u)
         simulated_updates = info.pop("env_simulated_updates", {})
 
-        reward = 0
         for e in info["labels"]:
             # apply simulated updates to the environment
             if e in simulated_updates:
                 simulated_updates[e](self.unwrapped)
         
         u_next = self.rm.get_next_state(self.u, info["labels"])
-        reward += self.rm.get_reward(self.u, u_next)
+        reward = self._get_reward(reward, u_next)
         self.u = u_next
 
-        terminated = self.rm.is_state_terminal(self.u)
+        terminated = self._get_terminated(terminated)
         info["rm_state"] = self.u
 
         return observation, reward, terminated, truncated, info
+
+    def _get_reward(self, reward, u_next):
+        return reward
+    
+    def _get_terminated(self, terminated):
+        if self.termination_mode == self.TerminationMode.ENV:
+            return terminated
+        else: # should be TerminationMode.RM
+            return self.rm.is_state_terminal(self.u)
 
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
@@ -165,12 +182,23 @@ class RewardMachineWrapper(gymnasium.Wrapper):
         info["rm_state"] = self.u
         return obs, info
 
+class RewardMachineWrapper(AutomataWrapper):
+
+    def _get_reward(self, reward, u_next):
+        return self.rm.get_reward(self.u, u_next)
+
 
 class SingleAgentEnvWrapper(gymnasium.Wrapper):
     def __init__(self, env: gymnasium.Env, agent_id: str):
         self.agent_id = agent_id
 
         super().__init__(env)
+
+        self.observation_space = gymnasium.spaces.Dict({
+            aid: obs_space
+            for aid, obs_space in self.observation_space.spaces.items()
+            if aid == self.agent_id
+        })
 
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)

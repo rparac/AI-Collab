@@ -102,7 +102,8 @@ class DQN(OffPolicyAlgorithm):
             seed: Optional[int] = None,
             device: Union[th.device, str] = "auto",
             _init_setup_model: bool = True,
-            total_timesteps: int = 1000
+            total_timesteps: int = 1000,
+            num_rm_states: int = 2
     ) -> None:
         super().__init__(
             policy,
@@ -140,9 +141,7 @@ class DQN(OffPolicyAlgorithm):
         # "epsilon" for the epsilon-greedy exploration
         self.exploration_rate = 0.0
 
-        # TODO parametrize
-
-        self.num_rm_states = 3
+        self.num_rm_states = num_rm_states
         self.num_nt_rm_states = self.num_rm_states - 1
 
         self.observation_space = spaces.Dict({

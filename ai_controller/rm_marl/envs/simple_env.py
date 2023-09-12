@@ -72,7 +72,7 @@ class SimpleEnv(BaseGridEnv):
             canvas.blit(img, self.pix_square_size * (pos + 0.25))
 
     def _can_enter(self, new_pos):
-        for label, positions in self.unwrapped.postions_by_type("W").items():
+        for label, positions in self.postions_by_type("W").items():
             if tuple(new_pos) in positions:
                 return False
         return True
@@ -129,7 +129,12 @@ class SimpleEnv(BaseGridEnv):
             self._b1_pressed = True
         if self._b1_pressed and self._is_button_pressed("BR"):
             terminated = True
-        reward = 1 if terminated else -0.01  # Binary sparse rewards
+
+        if terminated:
+            reward = 1
+            self._b1_pressed = False
+        else: 
+            reward = -0.01
 
         observation = self._get_obs()
         info = self._get_info()
@@ -143,19 +148,19 @@ class SimpleEnv(BaseGridEnv):
 class SimpleEnvLabellingFunctionWrapper(LabelingFunctionWrapper):
     def get_labels(self, obs: dict = None, prev_obs: dict = None):
         """Returns a modified observation."""
-        agent_locations = obs or self.unwrapped.agent_locations
-        prev_agent_locations = prev_obs or self.prev_agent_locations
+        agent_locations = obs
+        prev_agent_locations = prev_obs
         labels = []
 
         by_positions = self.unwrapped.postions_by_type("B").get("BY", [])
         br_positions = self.unwrapped.postions_by_type("B").get("BR", [])
 
-        if self._agent_has_moved_to(
+        if prev_agent_locations and self._agent_has_moved_to(
                 "A1", prev_agent_locations, agent_locations, by_positions
         ):
             labels.append("by")
 
-        if self._agent_has_moved_to(
+        if prev_agent_locations and self._agent_has_moved_to(
                 "A1", prev_agent_locations, agent_locations, br_positions
         ):
             labels.append("br")

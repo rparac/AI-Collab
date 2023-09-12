@@ -9,27 +9,32 @@ from ._base import Algo
 
 
 class QRM(Algo):
-
     _np_random: Optional[np.random.Generator] = None
 
     def __init__(
-        self,
-        action_space: "gymnasium.spaces.Space" = None,
-        epsilon: float = 0.0,
-        temperature: float = 50.0,
-        alpha: float = 0.8,
-        gamma: float = 0.9,
-        seed: int = 123,
+            self,
+            action_space: "gymnasium.spaces.Space" = None,
+            initial_epsilon: float = 0.0,
+            final_epsilon: float = 0.0,
+            exploration_steps: int = 1000,
+            temperature: float = 50.0,
+            alpha: float = 0.8,
+            gamma: float = 0.9,
+            seed: int = 123,
     ):
         assert isinstance(action_space, gymnasium.spaces.Discrete)
         self.action_space = action_space
-        self.epsilon = epsilon
+        self.initial_epsilon = initial_epsilon
+        self.final_epsilon = final_epsilon
+        self.exploration_steps = exploration_steps
         self.temperature = temperature
         self.alpha = alpha
         self.gamma = gamma
         self._seed = seed
 
         self.q = defaultdict(self._q_sa_constructor)
+
+        self.step_count = 0
 
         self.reset(seed=seed)
 
@@ -50,9 +55,9 @@ class QRM(Algo):
     def _recursive_to_hashable_state_(state):
         if type(state) == np.ndarray:
             return tuple(state)
-        if type(state) == list:
+        if type(state) in [list, tuple]:
             return tuple(QRM._recursive_to_hashable_state_(val) for val in state)
-        if type(state) in [int, tuple, float, bool]:
+        if type(state) in [int, float, bool]:
             return state
 
         return tuple(
@@ -61,10 +66,10 @@ class QRM(Algo):
 
     @staticmethod
     def _to_hashable_state_(state):
-        return QRM._recursive_to_hashable_state_(state)
-        # return tuple(
-        #     sorted({k: tuple(v) for k, v in state.items()}.items(), key=lambda i: i[0])
-        # )
+        # return QRM._recursive_to_hashable_state_(state)
+        return tuple(
+            sorted({k: tuple(v) for k, v in state.items()}.items(), key=lambda i: i[0])
+        )
 
     def learn(self, state, u, action, reward, done, next_state, next_u):
         next_q = np.amax(self.q[next_u][self._to_hashable_state_(next_state)])
@@ -76,22 +81,25 @@ class QRM(Algo):
 
         # Bellman update
         self.q[u][self._to_hashable_state_(state)][action] = (
-            1 - self.alpha
-        ) * current_q + self.alpha * target_q
+                                                                     1 - self.alpha
+                                                             ) * current_q + self.alpha * target_q
 
         return loss
 
-    def action(self, state, u, greedy: bool = False):
+    # TODO: implement self.train()
+    def action(self, state, u, greedy: bool = False, training: bool = True):
+        if training:
+            self.step_count += 1
 
-        if self._np_random.random() < self.epsilon:
+        if training and self._np_random.random() < self.epsilon:
             action = self._np_random.choice(range(self.action_space.n))
         elif not greedy:
             pr_sum = np.sum(
                 np.exp(self.q[u][self._to_hashable_state_(state)] * self.temperature)
             )
             pr = (
-                np.exp(self.q[u][self._to_hashable_state_(state)] * self.temperature)
-                / pr_sum
+                    np.exp(self.q[u][self._to_hashable_state_(state)] * self.temperature)
+                    / pr_sum
             )
 
             # If any q-values are so large that the softmax function returns infinity,
@@ -116,3 +124,11 @@ class QRM(Algo):
             action = self._np_random.choice(best_actions)
 
         return action
+
+    @property
+    def epsilon(self):
+        if self.step_count >= self.exploration_steps:
+            return self.final_epsilon
+        else:
+            slope = (self.final_epsilon - self.initial_epsilon) / self.exploration_steps
+            return self.initial_epsilon + self.step_count * slope

@@ -16,6 +16,7 @@ class BaseGridEnv(gymnasium.Env):
         "Y": (255, 255, 102),
         "G": (178, 255, 102),
         "R": (255, 102, 102),
+        "B": (66, 182, 255),
     }
 
     class Actions(Enum):

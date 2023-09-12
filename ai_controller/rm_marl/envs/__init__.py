@@ -28,3 +28,8 @@ register(
     entry_point='rm_marl.envs.simple_env:SimpleEnv',
     disable_env_checker=True,
 )
+register(
+    id='rm-marl/AICollab-v0',
+    entry_point='rm_marl.envs.ai_collab:AICollab',
+    disable_env_checker=True,
+)
