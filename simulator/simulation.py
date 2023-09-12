@@ -598,13 +598,15 @@ class Simulation(Controller):
         for ai_idx in range(num_ais):  
             robot_id = self.get_unique_id()                                 
             self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
-            self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
-        
+            # self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
+            self.robot_names_translate[str(robot_id)] = f"A{ai_idx + 1}"
+
         #Create user magnebots
         for us_idx in range(num_users):
             robot_id = self.get_unique_id()
             self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
-            self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
+            # self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
+            self.robot_names_translate[str(robot_id)] = f"A{us_idx + num_ais + 1}"
 
 
         reticule_size = 9

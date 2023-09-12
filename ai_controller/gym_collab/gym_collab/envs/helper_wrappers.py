@@ -52,20 +52,33 @@ class AutomaticSensingWrapper(gym.Wrapper):
         super().__init__(env)
         self.env = env
 
+        self.last_frame = None
+        self.last_map_metadata = None
+        self.dropped_in_safe_zone = set()
+
     def reset(
             self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None
     ) -> Tuple[WrapperObsType, Dict[str, Any]]:
         self.env.reset(seed=seed, options=options)
 
+        self.dropped_in_safe_zone.clear()
         obs, info, _reward = self._update_with_sensing_info()
+        self.last_frame = obs["frame"]
+        self.last_map_metadata = info["map_metadata"]
         return obs, info
 
     def step(
             self, action: WrapperActType
     ) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+        if action == Action.drop_object.value:
+            a_pos, _ = SimpleObservations.find_agent_positions(self.last_frame)
+            if a_pos in self.env.goal_coords:
+                self.dropped_in_safe_zone.add(SimpleObservations.get_object_id(a_pos, self.last_map_metadata))
 
         next_observation, reward, terminated, truncated, info = self.env.step(action)
         next_observation, info, reward2 = self._update_with_sensing_info(terminated, truncated, next_observation, info)
+        self.last_frame = next_observation["frame"]
+        self.last_map_metadata = info["map_metadata"]
 
         return next_observation, reward + reward2, terminated, truncated, info
 
@@ -89,6 +102,7 @@ class AutomaticSensingWrapper(gym.Wrapper):
             )
             obs_to_update["nearby_obj_weight"] = danger_sensing_obs["nearby_obj_weight"]
             obs_to_update["nearby_obj_danger"] = danger_sensing_obs["nearby_obj_danger"]
+            obs_to_update["nearby_obj_was_dropped"] = danger_sensing_obs["nearby_obj_was_dropped"]
             reward += reward_2
 
         if not terminated and not truncated:
@@ -127,6 +141,10 @@ class AutomaticSensingWrapper(gym.Wrapper):
 
         obs["nearby_obj_weight"] = 0
         obs["nearby_obj_danger"] = 0
+        obs["nearby_obj_was_dropped"] = 0
+
+        # drop
+        # self.pos in self.goal_coords
 
         # Randomly choose which object to show the value for if there are more
         if len(objects_nearby) > 0:
@@ -138,6 +156,9 @@ class AutomaticSensingWrapper(gym.Wrapper):
             # Map 0 - unknown, 1 - not dangerous, 2 - dangerous -> 0 - not dangerous, 1 - dangerous
             obs["nearby_obj_danger"] = elem["item_danger_level"] - 1
             obs["nearby_obj_weight"] = elem["item_weight"]
+            obj_pos = elem["item_location"]
+            obj_id = SimpleObservations.get_object_id(obj_pos, map_metadata)
+            obs["nearby_obj_was_dropped"] = obj_id in self.dropped_in_safe_zone
 
         return obs, _reward, terminated, truncated, info
 
@@ -263,26 +284,33 @@ class SimpleObservations(gym.Wrapper):
         assert isinstance(self.env.observation_space, gym.spaces.Dict)
 
         pos_max = self.env.observation_space['frame'].shape
-
-        agent_info_space = gym.spaces.Dict({
-            "pos": gym.spaces.MultiDiscrete(list(pos_max)),
-            "need_help": gym.spaces.Discrete(1),
+        self.agent_info_space = gym.spaces.Dict({
+            "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
+            # "need_help": gym.spaces.Discrete(2),
         })
-        object_info_space = gym.spaces.Dict({
-            "pos": gym.spaces.MultiDiscrete(list(pos_max)),
-            "carried_by": gym.spaces.MultiBinary(self.env.num_agents),
+        self.object_info_space = gym.spaces.Dict({
+            # "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
+            # "carried_by": gym.spaces.MultiBinary(num_agents),
+            "was_dropped": gym.spaces.Discrete(2),
         })
 
-        # object_info_space
+        num_agents = self.env.num_agents
 
-        self.observation_space = gym.spaces.Dict({
-            "agent_id": gym.spaces.Discrete(self.env.num_agents),
-            "agent_strength": self.env.observation_space["strength"],
-            "nearby_obj_weight": self.env.observation_space["item_output"]["item_weight"],
-            "nearby_obj_danger": gym.spaces.Discrete(1),  # is or isn't dangerous
-            "agent_infos": gym.spaces.Sequence(agent_info_space),
-            "object_infos": gym.spaces.Sequence(object_info_space),
+        self.unflatten_observation_space = gym.spaces.Dict({
+            "agent_id": gym.spaces.Discrete(num_agents),
+            "agent_strength": gym.spaces.Discrete(num_agents, start=1),
+            "nearby_obj_weight": gym.spaces.Discrete(num_agents + 2),
+            "nearby_obj_danger": gym.spaces.Discrete(2),  # is or isn't dangerous,
+            "nearby_obj_was_dropped": gym.spaces.Discrete(2),  # whether it has already been dropped in the zone
+            # TODO: handle other agents nearby
+            # **{a: gym.spaces.utils.flatten_space(self.agent_info_space) for a in self.agent_ids},
+            **{"A": self.agent_info_space},
+            # TODO: there is no easy way to obtain object ids at the moment
+            #  Do a map sweep to get them. It is not too expensive if done once
+            **{o: self.object_info_space for o in ['D0_1', 'D1_1']}
         })
+
+        self.observation_space = self.unflatten_observation_space
 
         self.agent_id = None
         self.other_agent_ids = None
@@ -291,7 +319,7 @@ class SimpleObservations(gym.Wrapper):
         WrapperObsType, Dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
 
-        curr_pos, other_pos = SimpleObservations._find_agent_positions(obs["frame"])
+        curr_pos, other_pos = SimpleObservations.find_agent_positions(obs["frame"])
         agent_id = SimpleObservations._pos_to_agent_id(curr_pos, info["map_metadata"])
         other_ids = [SimpleObservations._pos_to_agent_id(pos, info["map_metadata"]) for pos in other_pos]
         self.agent_id = agent_id
@@ -308,15 +336,16 @@ class SimpleObservations(gym.Wrapper):
         num_agents = len(agent_infos) + 1
         object_infos = self.get_object_infos(info["map_metadata"], num_agents)
 
-        obs = {
+        obs_new = {
             "agent_id": self.agent_id,
             "agent_strength": observation["strength"],
             "nearby_obj_weight": observation["nearby_obj_weight"],
             "nearby_obj_danger": observation["nearby_obj_danger"],
-            "agent_infos": agent_infos,
-            "object_infos": object_infos,
+            "nearby_obj_was_dropped": observation["nearby_obj_was_dropped"],
+            "A": {"pos": self.agent_name_to_pos(self.idx_to_name(self.agent_id), info["map_metadata"])},
+            ** object_infos,
         }
-        return obs
+        return obs_new
 
     @staticmethod
     def _get_agent_infos(agent_ids: List[int], info: Dict[str, Any]):
@@ -327,30 +356,33 @@ class SimpleObservations(gym.Wrapper):
             need_help_ids.add(agent_id)
 
         id_pos_map = {
-            id_: SimpleObservations._agent_name_to_position(SimpleObservations.idx_to_name(id_), info["map_metadata"])
+            id_: SimpleObservations.agent_name_to_pos(SimpleObservations.idx_to_name(id_), info["map_metadata"])
             for id_ in agent_ids
         }
 
-        agent_infos = [SimpleObservations.agent_info(id_pos_map[i], need_help=i in need_help_ids) for i in
-                       range(0, len(id_pos_map))]
+        # TODO: put back when multi-agent casew works
+        agent_infos = {SimpleObservations.idx_to_name(i):
+                           SimpleObservations.agent_info(id_pos_map[i], need_help=i in need_help_ids)
+                       for i in range(0, len(id_pos_map))}
         return agent_infos
 
     @staticmethod
     def agent_info(pos: (int, int), need_help: bool):
         return {
             "pos": pos,
-            "need_help": need_help,
+            # "need_help": need_help,
         }
 
     @staticmethod
-    def object_info(pos: (int, int), carried_by: np.ndarray):
+    def object_info(pos: (int, int), carried_by: np.ndarray, was_dropped: bool):
         return {
-            "pos": pos,
-            "carried_by": carried_by,
+            # "pos": pos,
+            # "carried_by": carried_by,
+            "was_dropped": was_dropped,
         }
 
     @staticmethod
-    def _find_agent_positions(world_map: np.ndarray) -> (Tuple[int, int], List[Tuple[int, int]]):
+    def find_agent_positions(world_map: np.ndarray) -> (Tuple[int, int], List[Tuple[int, int]]):
         other_agent_id = 3
         curr_agent_id = 5
 
@@ -373,7 +405,7 @@ class SimpleObservations(gym.Wrapper):
         return SimpleObservations.name_to_idx(agent_env_id)
 
     @staticmethod
-    def _agent_name_to_position(agent_id: str, map_metadata: Dict[str, List[Any]]):
+    def agent_name_to_pos(agent_id: str, map_metadata: Dict[str, List[Any]]):
         for pos_str, val in map_metadata.items():
             if agent_id in val:
                 return SimpleObservations._map_key_to_pos(pos_str)
@@ -382,26 +414,36 @@ class SimpleObservations(gym.Wrapper):
     @staticmethod
     def name_to_idx(name: str) -> int:
         # ids are assigned from 'A'
-        return ord(name) - ord('A')
+        return int(name[1:]) - 1
 
     @staticmethod
     def idx_to_name(idx: int) -> str:
-        return chr(idx + ord('A'))
+        return f"A{idx + 1}"
 
     @staticmethod
-    def get_object_infos(map_metadata: Dict[str, List[Any]], num_agents: int) -> List[Dict[str, Any]]:
-        sol = []
+    def get_object_id(pos: Tuple[int, int], map_metadata: Dict[str, List[any]]) -> str:
+        map_key = f"{pos[0]}_{pos[1]}"
+        map_info = map_metadata[map_key]
+        assert type(map_info[0]) == list
+        id_, weight, danger_level = map_info[0]
+        return f"{'D' if danger_level == 2 else 'S'}{id_}_{weight}"
+
+    def get_object_infos(self, map_metadata: Dict[str, List[Any]], num_agents: int) -> Dict[str, Any]:
+        sol = {}
         for str_pos, location_info in map_metadata.items():
             # Check if current positions holds object information
             if type(location_info[0]) == list:
                 pos = SimpleObservations._map_key_to_pos(str_pos)
+                object_id = SimpleObservations.get_object_id(pos, map_metadata)
+
                 carried_by = np.zeros(num_agents)
                 # An agent is holding an object if both object and agent are at the same location
                 # Also need to mitigate the case when two objects are at the same location
                 if len(location_info) > 1 and isinstance(location_info[-1], str):
                     agent_name = location_info[-1]
                     carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
-                sol.append(SimpleObservations.object_info(pos=pos, carried_by=carried_by))
+                sol[object_id] = SimpleObservations.object_info(pos=pos, carried_by=carried_by,
+                                                                was_dropped=object_id in self.dropped_in_safe_zone)
         return sol
 
     @staticmethod
@@ -419,16 +461,20 @@ class AgentNameWrapper(gym.Wrapper):
     all agents which are then projected to each agent
     """
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env: SimpleObservations):
         super().__init__(env)
+
+        self.unflatten_observation_space = env.observation_space
         self.observation_space = gym.spaces.Dict({
-            SimpleObservations.idx_to_name(i): env.observation_space
+            SimpleObservations.idx_to_name(i): gym.spaces.utils.flatten_space(env.observation_space)
             for i in range(self.env.num_agents)
         })
-        self.action_space = gym.spaces.Dict({
-            SimpleObservations.idx_to_name(i): env.action_space
-            for i in range(self.env.num_agents)
-        })
+        # self.action_space = gym.spaces.Dict({
+        #     SimpleObservations.idx_to_name(i): env.action_space
+        #     for i in range(self.env.num_agents)
+        # })
+        self.action_space = self.env.action_space
+        self.env = env
 
     def reset(self, **kwargs) -> Tuple[WrapperObsType, Dict[str, Any]]:
         old_observation, info = self.env.reset(**kwargs)
@@ -441,8 +487,11 @@ class AgentNameWrapper(gym.Wrapper):
 
     def observation(self, observation: ObsType) -> WrapperObsType:
         agent_idx = observation["agent_id"]
-        return {SimpleObservations.idx_to_name(agent_idx): observation}
+        return {
+            SimpleObservations.idx_to_name(agent_idx): gym.spaces.utils.flatten(self.unflatten_observation_space,
+                                                                                observation)
+        }
 
     def action(self, action: WrapperActType) -> ActType:
         assert isinstance(action, dict) and len(action) == 1
-        return action[SimpleObservations.idx_to_name(0)]
+        return action[self.env.agent_id]
