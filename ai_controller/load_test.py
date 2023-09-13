@@ -14,7 +14,7 @@ from rm_marl.reward_machine import RewardMachine
 from rm_marl.trainer import Trainer
 
 BASE_PATH = os.path.dirname(__file__)
-save_path = os.path.join(BASE_PATH, "logs/ai-collab-exp1/sim2sim_no_pos")
+save_path = os.path.join(BASE_PATH, "logs/ai-collab-exp1/1_obj_leo_update")
 
 rm_path = {
     "A1": os.path.join(BASE_PATH, "data/ai-collab/rm_agent_1.txt"),

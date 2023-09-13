@@ -1115,7 +1115,7 @@ class Simulation(Controller):
             # iron_box is the name of the model used in tdw
             final_coords = {'iron_box': []}
 
-            locations = [[2.5, 1.5], [-2.5, 1.5]]
+            locations = [[2.5, 1.5]] # [[2.5, 1.5], [-2.5, 1.5]]
             # locations = [[2.99, 1.5], [-2.99, 1.5]]
             # locations = [[3.1, 1.9], [-3.1, 1.9]]
             for loc in locations:

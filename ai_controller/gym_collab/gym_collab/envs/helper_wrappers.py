@@ -287,29 +287,23 @@ class SimpleObservations(gym.Wrapper):
 
         pos_max = self.env.observation_space['frame'].shape
         num_agents = self.env.num_agents
-        self.agent_info_space = gym.spaces.Dict({
-            "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
-            # "need_help": gym.spaces.Discrete(2),
-        })
         self.object_info_space = gym.spaces.Dict({
             # "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
             "carried_by": gym.spaces.MultiBinary(num_agents),
             "was_dropped": gym.spaces.Discrete(2),
         })
 
-        self.object_info_keys = ['D0_1', 'D1_1']
+        # TODO: there is no easy way to obtain object ids at the moment
+        #  Do a map sweep to get them. It is not too expensive if done once
+        self.object_info_keys = ['D0_1'] #, 'D1_1']
 
         self.unflatten_observation_space = gym.spaces.Dict({
             "agent_id": gym.spaces.Discrete(num_agents),
             "agent_strength": gym.spaces.Discrete(num_agents, start=1),
+            "agent_pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
             "nearby_obj_weight": gym.spaces.Discrete(num_agents + 2),
             "nearby_obj_danger": gym.spaces.Discrete(2),  # is or isn't dangerous,
             "nearby_obj_was_dropped": gym.spaces.Discrete(2),  # whether it has already been dropped in the zone
-            # TODO: handle other agents nearby
-            # **{a: gym.spaces.utils.flatten_space(self.agent_info_space) for a in self.agent_ids},
-            **{"A": gym.spaces.utils.flatten_space(self.agent_info_space)},
-            # TODO: there is no easy way to obtain object ids at the moment
-            #  Do a map sweep to get them. It is not too expensive if done once
             **{o: gym.spaces.utils.flatten_space(self.object_info_space) for o in self.object_info_keys}
         })
 
@@ -341,11 +335,10 @@ class SimpleObservations(gym.Wrapper):
         obs_new = {
             "agent_id": self.agent_id,
             "agent_strength": observation["strength"],
+            "agent_pos": np.array(self.agent_name_to_pos(self.idx_to_name(self.agent_id), info["map_metadata"])),
             "nearby_obj_weight": observation["nearby_obj_weight"],
             "nearby_obj_danger": observation["nearby_obj_danger"],
             "nearby_obj_was_dropped": observation["nearby_obj_was_dropped"],
-            "A": gym.spaces.flatten(self.agent_info_space, {
-                "pos": np.array(self.agent_name_to_pos(self.idx_to_name(self.agent_id), info["map_metadata"]))}),
             **object_infos,
         }
         return obs_new
@@ -418,7 +411,7 @@ class SimpleObservations(gym.Wrapper):
 
     @staticmethod
     def name_to_idx(name: str) -> int:
-        # ids are assigned from 'A'
+        # names are of the form "A{idx + 1}"
         return int(name[1:]) - 1
 
     @staticmethod
