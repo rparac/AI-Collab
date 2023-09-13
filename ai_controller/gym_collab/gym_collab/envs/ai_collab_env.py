@@ -685,6 +685,7 @@ class AICollabEnv(gym.Env):
         wait_get_objects = 9
         wait_get_agents = 10
         move_to_pickup = 11
+        move_after_pickup = 12
 
     def take_action(self, action):
 
@@ -910,7 +911,20 @@ class AICollabEnv(gym.Env):
                 print("waited to reset arm")
                 action_message.append(self.reset_arm(Arm.left))
                 state = self.State.waiting_ongoing
+                data["next_state"] = self.State.move_after_pickup
+
+        elif state == self.State.move_after_pickup:
+            if action_status != ActionStatus.ongoing:
+                # TODO: remove duplication with move
+                target_coordinates = np.array(
+                    self.map_config['edge_coordinate']) + data["object_location"] * self.map_config['cell_size']
+                target = {
+                    "x": target_coordinates[0],
+                    "y": 0,
+                    "z": target_coordinates[1]}
+                state = self.State.waiting_ongoing
                 data["next_state"] = self.State.action_end
+                action_message.append(self.move_to(target=target))
 
         elif state == self.State.reverse_after_dropping:
             if action_status != ActionStatus.ongoing:

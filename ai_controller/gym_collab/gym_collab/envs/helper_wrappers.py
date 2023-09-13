@@ -445,15 +445,15 @@ class SimpleObservations(gym.Wrapper):
                 carried_by = np.zeros(num_agents)
                 # An agent is holding an object if both object and agent are at the same location
                 # Also need to mitigate the case when two objects are at the same location
-                # TODO: wait for Julian to fix this
+                # TODO: check if this is fixed
                 if len(location_info) > 1 and isinstance(location_info[-1], str):
                     agent_name = location_info[-1]
                     carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
 
                 # Check if the current agent is carrying the object
                 # Mitigation for 1 agent
-                if sim_obj_id == self.env.unwrapped.extra.get('carrying_object', ''):
-                    carried_by[self.agent_id] = 1
+                # if sim_obj_id == self.env.unwrapped.extra.get('carrying_object', ''):
+                #     carried_by[self.agent_id] = 1
                 sol[object_id] = gym.spaces.flatten(self.object_info_space,
                                                     SimpleObservations.object_info(pos=pos, carried_by=carried_by,
                                                                                    was_dropped=object_id in self.dropped_in_safe_zone))
