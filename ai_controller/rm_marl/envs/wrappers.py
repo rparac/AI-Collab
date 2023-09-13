@@ -179,6 +179,18 @@ class AutomataWrapper(gymnasium.Wrapper):
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
         self.u = self.rm.u0
+
+        info["labels"] = self.filter_labels(info["labels"], self.u)
+        simulated_updates = info.pop("env_simulated_updates", {})
+
+        for e in info["labels"]:
+            # apply simulated updates to the environment
+            if e in simulated_updates:
+                simulated_updates[e](self.unwrapped)
+        
+        u_next = self.rm.get_next_state(self.u, info["labels"])
+        self.u = u_next
+        
         info["rm_state"] = self.u
         return obs, info
 

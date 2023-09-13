@@ -83,7 +83,7 @@ class Trainer:
                 steps_count += 1
 
                 if run_config["training"]:
-                    self.total_steps += self.env.unwrapped.extra1
+                    self.total_steps += 1
 
                 for env_id, env in envs.items():
 
@@ -282,6 +282,10 @@ class Trainer:
         for u in agent.rm.states:
             if u != current_u and not agent.rm.is_state_terminal(u):
                 l = env.filter_labels(labels, u)
+
+                # TODO: check this fix
+                if not l:
+                    continue
 
                 next_u = agent.rm.get_next_state(u, l)
                 r = agent.rm.get_reward(u, next_u)

@@ -1,20 +1,22 @@
 import itertools
+import copy
 import random
+from enum import Enum, IntEnum
+from typing import Tuple, List, Union
 from collections import defaultdict
-from enum import IntEnum
-from typing import Tuple, List
 
 import gymnasium as gym
 import numpy as np
 import pygame
 
 from .base_grid import BaseGridEnv
-from .wrappers import LabelingFunctionWrapper
+from .wrappers import LabelingFunctionWrapper, SingleAgentEnvWrapper
 from ..utils.grid_world import adjacent_cells_iterator, inbounds
 
+FIX_ORIENTATION = False
+FIX_NEW_PICKUP = True
+assert not (FIX_ORIENTATION and FIX_NEW_PICKUP), "the fixes are exclusive"
 
-# TODO: there seems to be a drop bug when the agent is obstructed.
-#  It should do nothing in that case, not climb the wall
 
 class AICollab(BaseGridEnv):
     class Actions(IntEnum):
@@ -32,29 +34,39 @@ class AICollab(BaseGridEnv):
             render_mode=None, size=20, positions=None, file=None, initial_pos_seed=0,
             max_steps=5000,
             num_agents=1,
+            randomize_objects_location=False
     ):
         super().__init__(render_mode, size, positions, file)
         self.initial_pos_seed = initial_pos_seed
         self.max_steps = max_steps
         self.num_agents = num_agents
-
-        self.agent_infos = {
-            self.id_to_name(i): {
-                "pos": self._get_agent_start_pos(self.id_to_name(i)),
-                # "need_help": False
-            }
-            for i in range(num_agents)
-        }
+        self.randomize_objects_location = randomize_objects_location
 
         self.dropped_in_safe_zone = set()
+        self.object_carried = defaultdict(lambda: None)
+        self.num_steps = 0
+
         self.agent_ids = set(self.agent_locations.keys())
         self.object_ids = set(self.object_infos.keys())
+        self.goal_coords = self.postions_by_type("ZZ")["ZZ"]
+
+        self.agent_infos = {
+            aid: {
+                "pos": self._get_agent_start_pos(aid),
+                # "need_help": False
+            }
+            for aid in self.agent_ids
+        }
+
+        if FIX_ORIENTATION:
+            self._orientation = {
+                aid: self.Actions.up
+                for aid in self.agent_ids
+            }
+        else:
+            self._orientation = self.Actions.up
 
         pos_max = (self.size, self.size)
-        self.agent_info_space = gym.spaces.Dict({
-            "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
-            # "need_help": gym.spaces.Discrete(2),
-        })
         self.object_info_space = gym.spaces.Dict({
             # "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
             # "carried_by": gym.spaces.MultiBinary(num_agents),
@@ -64,12 +76,10 @@ class AICollab(BaseGridEnv):
         self.unflatten_observation_space = gym.spaces.Dict({
             "agent_id": gym.spaces.Discrete(num_agents),
             "agent_strength": gym.spaces.Discrete(num_agents, start=1),
+            "agent_pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
             "nearby_obj_weight": gym.spaces.Discrete(num_agents + 2),
             "nearby_obj_danger": gym.spaces.Discrete(2),  # is or isn't dangerous,
             "nearby_obj_was_dropped": gym.spaces.Discrete(2),  # whether it has already been dropped in the zone
-            # TODO: handle other agents nearby
-            # **{a: gym.spaces.utils.flatten_space(self.agent_info_space) for a in self.agent_ids},
-            **{"A": gym.spaces.utils.flatten_space(self.agent_info_space) for a in self.agent_ids},
             **{o: gym.spaces.utils.flatten_space(self.object_info_space) for o in self.object_ids}
         })
 
@@ -79,13 +89,6 @@ class AICollab(BaseGridEnv):
             for a in self.agent_ids
         })
         self.action_space = gym.spaces.Discrete(len(self.Actions))
-
-        self._orientation = self.Actions.up
-        self.object_carried = defaultdict(lambda: None)
-
-        self.num_steps = 0
-
-        self.goal_coords = self.postions_by_type("ZZ")["ZZ"]
 
     def _get_obs(self):
         sol = {}
@@ -97,12 +100,10 @@ class AICollab(BaseGridEnv):
                 a_name: gym.spaces.utils.flatten(self.unflatten_observation_space, {
                     "agent_id": self.name_to_id(a_name),
                     "agent_strength": self.strength(a_name),
+                    "agent_pos": self.agent_infos[a_name]["pos"],
                     "nearby_obj_weight": nearby_obj_weight,
                     "nearby_obj_danger": nearby_obj_danger,
                     "nearby_obj_was_dropped": nearby_object_was_dropped,
-                    # TODO: handle help
-                    # **{a: gym.spaces.flatten(self.agent_info_space, self.agent_infos[a]) for a in self.agent_ids},
-                    **{"A": gym.spaces.flatten(self.agent_info_space, self.agent_infos[a_name])},
                     **{o: gym.spaces.flatten(self.object_info_space, i) for o, i in self.object_infos.items()},
                 })
             })
@@ -122,9 +123,7 @@ class AICollab(BaseGridEnv):
         for a, obs in unflatten_obs.items():
             sol[a] = {}
             for k, o in obs.items():
-                if k in self.agent_ids:
-                    sol[a].update({k: gym.spaces.utils.unflatten(self.agent_info_space, o)})
-                elif k in self.object_ids:
+                if k in self.object_ids:
                     sol[a].update({k: gym.spaces.utils.unflatten(self.object_info_space, o)})
                 else:
                     sol[a].update({k: o})
@@ -179,17 +178,32 @@ class AICollab(BaseGridEnv):
             # canvas.blit(img, self.pix_square_size * (pos + 0.25))
 
     def _can_enter(self, new_pos):
-        walls = self.postions_by_type("W").items()
-        agents = self.postions_by_type("A").items()
-        s_items = self.postions_by_type("S").items()
-        d_items = self.postions_by_type("D").items()
-        for label, positions in itertools.chain(walls, agents, s_items, d_items):
-            if tuple(new_pos) in positions:
-                return False
-        return True
+        if FIX_NEW_PICKUP:
+            walls = self.postions_by_type("W").items()
+            agents = self.postions_by_type("A").items()
+            for label, positions in itertools.chain(walls, agents):
+                if tuple(new_pos) in positions:
+                    return False
+            return True
+        ###########
+        else:
+            walls = self.postions_by_type("W").items()
+            agents = self.postions_by_type("A").items()
+            s_items = self.postions_by_type("S").items()
+            d_items = self.postions_by_type("D").items()
+            for label, positions in itertools.chain(walls, agents, s_items, d_items):
+                if tuple(new_pos) in positions:
+                    return False
+            return True
 
     def reset(self, seed=None, options=None):
-        self._orientation = self.Actions.up
+        if FIX_ORIENTATION:
+            self._orientation = {
+                aid: self.Actions.up
+                for aid in self.agent_ids
+            }
+        else:
+            self._orientation = self.Actions.up
         self.object_carried.clear()
         self.num_steps = 0
         self.agent_infos = {
@@ -200,43 +214,92 @@ class AICollab(BaseGridEnv):
             for i in range(self.num_agents)
         }
         self.dropped_in_safe_zone.clear()
-        obs, info = super().reset(seed=seed, options=options)
-        return obs, info
+
+        # override reset to allow randomize postions
+        gym.Env.reset(self, seed=seed)
+
+        self.active_flags.clear()
+        self.positions.clear()
+        for p, l in self.original_positions.items():
+            if self.randomize_objects_location and l[0] in ("S", "D"):
+                continue
+            self.positions[p].append(l)
+
+        if self.randomize_objects_location:
+            for p, l in self.original_positions.items():
+                if l[0] in ("S", "D"):
+                    p = self._randomize_object_location(p)
+                    self.positions[p].append(l)
+
+        observation = self._get_obs()
+        info = self._get_info()
+
+        if self.render_mode == "human":
+            self._render_frame()
+
+        return observation, info
+
+    def _randomize_object_location(self, original_p):
+        p = (self._np_random.integers(1, self.size - 1), self._np_random.integers(1, self.size - 1))
+        while self.positions[p]:
+            p = (self._np_random.integers(1, self.size - 1), self._np_random.integers(1, self.size - 1))
+        return p
 
     def step(self, actions):
-        reward = -0.01
+        agent_reward = {
+            aid: 0
+            for aid in actions.keys()
+        }
 
+        previous_agent_infos = copy.deepcopy(self.agent_infos)
         for aid, action in actions.items():
             # self.cancel_help_request(aid)
 
             act = self.Actions(action)
             if act == self.Actions.pick_up:
-                self.pick_up_step(aid)
+                agent_reward[aid] = self.pick_up_step(aid)
             elif act == self.Actions.drop:
-                reward = self.drop_step(aid)
+                agent_reward[aid] = self.drop_step(aid)
             # elif act == self.Actions.ask_for_help:
             #     self.ask_for_help(aid)
             elif act < self.Actions.pick_up:
                 if act != self.Actions.none:
-                    self._orientation = act
+                    if FIX_ORIENTATION:
+                        self._orientation[aid] = act
+                    else:
+                        self._orientation = act
                 direction = self._act_to_direction(act)
                 new_agent_pos = np.clip(
                     self.agent_infos[aid]["pos"] + direction, 0, self.size - 1
                 )
                 if self._can_enter(new_agent_pos):
-                    old_pos = tuple(self.agent_infos[aid]["pos"])
-                    self.positions[old_pos].remove(aid)
-                    self.positions[tuple(new_agent_pos)].append(aid)
-                    self.agent_infos[aid]["pos"] = np.array(new_agent_pos)
-                    if self.object_carried[aid]:
-                        self.positions[old_pos].remove(self.object_carried[aid])
-                        self.positions[tuple(new_agent_pos)].append(self.object_carried[aid])
+                    self.move_agent_to(aid, tuple(new_agent_pos))
+
+        for aid in self.agent_ids:
+            if aid in actions and actions[aid] < self.Actions.pick_up:
+                if FIX_NEW_PICKUP:
+                    if not self.object_carried[aid]:
+                        continue
+                    if self.strength(aid) >= self._get_object_weight(self.object_carried[aid]):
+                        self.positions[tuple(previous_agent_infos[aid]["pos"])].remove(self.object_carried[aid])
+                        self.positions[tuple(self.agent_infos[aid]["pos"])].append(self.object_carried[aid])
+                    elif any(elem in self.positions[tuple(self.agent_infos[aid]["pos"])] for elem in self.object_ids):
+                        self.move_agent_to(aid, tuple(previous_agent_infos[aid]["pos"]))
+                    else:
+                        agent_reward[aid] = self.drop_step(aid, tuple(previous_agent_infos[aid]["pos"]))
+                #####
+                else:
+                    if self.object_carried[aid] and self.strength(aid) >= self._get_object_weight(
+                            self.object_carried[aid]):
+                        self.positions[tuple(previous_agent_infos[aid]["pos"])].remove(self.object_carried[aid])
+                        self.positions[tuple(self.agent_infos[aid]["pos"])].append(self.object_carried[aid])
+                    else:
+                        self.drop_step(aid)
 
         # All dangerous objects have been moved to the zone
-        terminated = (
-            # a agent can be carrying a green object
-            # not any(self.object_carried.values()) and
-            all(d in self.dropped_in_safe_zone for d in self.postions_by_type("D").keys())
+        terminated = all(
+            d in self.dropped_in_safe_zone
+            for d in self.postions_by_type("D").keys()
         )
 
         observation = self._get_obs()
@@ -245,30 +308,48 @@ class AICollab(BaseGridEnv):
             self._render_frame()
 
         self.num_steps += 1
-        reward /= 10
+        reward = sum(ar or -0.01 for ar in agent_reward.values())
+        reward /= 20
 
         return observation, reward, terminated, self.num_steps >= self.max_steps, info
 
     def pick_up_step(self, a_name: str):
-        curr_pos = self.agent_infos[a_name]["pos"]
-        neighbour_pos = [cell for cell in adjacent_cells_iterator(curr_pos, self.size) if
-                         any(elem[0] in ["D", "S"] and self._get_object_weight(elem) <= self.strength(a_name) for elem
-                             in self.positions[cell]) and
-                         all(elem not in self.agent_infos.keys() for elem in self.positions[cell])
-                         ]
-        if len(neighbour_pos) > 0:
-            # Always check directions in a different order.
-            # This will result in a random object selection if there is more than 1
-            # in the vicinity.
-            chosen_object_pos = random.choice(neighbour_pos)
-            relative_dir = chosen_object_pos - curr_pos
-            self._orientation = self._dir_to_action(tuple(relative_dir))
+        if FIX_NEW_PICKUP:
+            reward = 0
+            curr_pos = self.agent_infos[a_name]["pos"]
+            object_picked_up = self._pick_by(self.positions[tuple(curr_pos)], lambda x: x[0] in ["D", "S"])
+            if object_picked_up:
+                if self.object_carried[a_name]:
+                    reward = self.drop_step(a_name)
+                self.object_carried[a_name] = object_picked_up
+            return reward
+        #######
+        else:
+            curr_pos = self.agent_infos[a_name]["pos"]
+            neighbour_pos = [cell for cell in adjacent_cells_iterator(curr_pos, self.size) if
+                             any(
+                                 (self._get_object_weight(elem) <= self.strength(a_name)) and
+                                 (elem not in self.object_carried.values())
+                                 for elem in self.positions[cell]
+                                 if elem[0] in ["D", "S"]
+                             )
+                             ]
+            if len(neighbour_pos) > 0:
+                # Always check directions in a different order.
+                # This will result in a random object selection if there is more than 1
+                # in the vicinity.
+                chosen_object_pos = random.choice(neighbour_pos)
+                relative_dir = chosen_object_pos - curr_pos
+                if FIX_ORIENTATION:
+                    self._orientation[a_name] = self._dir_to_action(tuple(relative_dir))
+                else:
+                    self._orientation = self._dir_to_action(tuple(relative_dir))
 
-            self.positions[tuple(curr_pos)].remove(a_name)
-            self.object_carried[a_name] = self._pick_by(self.positions[tuple(chosen_object_pos)],
-                                                        lambda x: x[0] in ["D", "S"])
-            self.positions[tuple(chosen_object_pos)].append(a_name)
-            self.agent_infos[a_name]["pos"] = np.array(chosen_object_pos)
+                self.positions[tuple(curr_pos)].remove(a_name)
+                self.object_carried[a_name] = self._pick_by(self.positions[tuple(chosen_object_pos)],
+                                                            lambda x: x[0] in ["D", "S"])
+                self.positions[tuple(chosen_object_pos)].append(a_name)
+                self.agent_infos[a_name]["pos"] = np.array(chosen_object_pos)
 
     @staticmethod
     def _get_object_weight(obj_id):
@@ -282,26 +363,52 @@ class AICollab(BaseGridEnv):
                 return x
         return None
 
-    def drop_step(self, a_name: str):
-        # handle orientation
-        # drop in the cell that should be adjacent to object's orientation
-        dir = self._act_to_direction(self._orientation)
-        old_location = self.agent_infos[a_name]["pos"]
-        new_agent_pos = old_location - dir
-        if inbounds((self.size, self.size), new_agent_pos[0], new_agent_pos[1]) and self.object_carried[a_name]:
-            self.positions[tuple(old_location)].remove(a_name)
-            self.positions[tuple(new_agent_pos)].append(a_name)
-            self.agent_infos[a_name]["pos"] = np.array(new_agent_pos)
-            self.object_carried[a_name] = None
+    def drop_step(self, a_name: str, agent_pos: tuple = None):
+        if FIX_NEW_PICKUP:
+            if not self.object_carried[a_name]:
+                return 0
 
-            if tuple(old_location) in self.goal_coords:
-                obj_dropped = self._pick_by(self.positions[tuple(old_location)], lambda x: x[0] in ["D", "S"])
-                if obj_dropped not in self.dropped_in_safe_zone:
+            curr_pos = agent_pos or self.agent_infos[a_name]["pos"]
+            if any(
+                    elem != self.object_carried[a_name]
+                    for elem in self.positions[tuple(curr_pos)]
+                    if elem[0] in ("D", "S")
+            ):
+                # can't drop an object if there is already another object in the location
+                return 0
+
+            self.object_carried[a_name] = None
+            if tuple(curr_pos) in self.goal_coords:
+                obj_dropped = self._pick_by(self.positions[tuple(curr_pos)], lambda x: x[0] in ["D", "S"])
+                if obj_dropped and obj_dropped not in self.dropped_in_safe_zone:
                     reward = -5 if obj_dropped[0] == "S" else 10
                     self.dropped_in_safe_zone.add(obj_dropped)
                     return reward
+            return 0
+        ##########
+        else:
+            # handle orientation
+            # drop in the cell that should be adjacent to object's orientation
+            if FIX_ORIENTATION:
+                dir = self._act_to_direction(self._orientation[a_name])
+            else:
+                dir = self._act_to_direction(self._orientation)
+            old_location = self.agent_infos[a_name]["pos"]
+            new_agent_pos = old_location - dir
+            if inbounds((self.size, self.size), new_agent_pos[0], new_agent_pos[1]) and self.object_carried[a_name]:
+                self.positions[tuple(old_location)].remove(a_name)
+                self.positions[tuple(new_agent_pos)].append(a_name)
+                self.agent_infos[a_name]["pos"] = np.array(new_agent_pos)
+                self.object_carried[a_name] = None
 
-        return -0.01
+                if tuple(old_location) in self.goal_coords:
+                    obj_dropped = self._pick_by(self.positions[tuple(old_location)], lambda x: x[0] in ["D", "S"])
+                    if obj_dropped not in self.dropped_in_safe_zone:
+                        reward = -5 if obj_dropped[0] == "S" else 10
+                        self.dropped_in_safe_zone.add(obj_dropped)
+                        return reward
+
+            return -0.01
 
     # @property
     # def agent_locations(self):
@@ -331,7 +438,7 @@ class AICollab(BaseGridEnv):
 
     def strength(self, a_name: str) -> int:
         curr_pos = tuple(self.agent_infos[a_name]["pos"])
-        strength = 1
+        strength = 0
         for adj_cell in adjacent_cells_iterator(curr_pos, self.size, eight_dir=True):
             for agent in self.agent_infos.keys():
                 if agent in self.positions[adj_cell]:
@@ -340,17 +447,28 @@ class AICollab(BaseGridEnv):
         return strength
 
     def nearby_obj_info(self, a_name: str):
-        curr_pos = tuple(self.agent_infos[a_name]["pos"])
-        for adj_cell in adjacent_cells_iterator(curr_pos, self.size):
-            if adj_cell in self.goal_coords:
-                continue
-            for entity in self.positions[adj_cell]:
+        if FIX_NEW_PICKUP:
+            curr_pos = tuple(self.agent_infos[a_name]["pos"])
+            for entity in self.positions[curr_pos]:
                 if entity[0] in ['S', 'D'] and entity not in self.object_carried.values():
                     weight = self._get_object_weight(entity)
                     danger = int(entity[0] == 'D')
                     was_dropped = entity in self.dropped_in_safe_zone
                     return weight, danger, was_dropped
-        return 0, 0, 0
+            return 0, 0, 0
+        ###
+        else:
+            curr_pos = tuple(self.agent_infos[a_name]["pos"])
+            for adj_cell in adjacent_cells_iterator(curr_pos, self.size):
+                if adj_cell in self.goal_coords:
+                    continue
+                for entity in self.positions[adj_cell]:
+                    if entity[0] in ['S', 'D'] and entity not in self.object_carried.values():
+                        weight = self._get_object_weight(entity)
+                        danger = int(entity[0] == 'D')
+                        was_dropped = entity in self.dropped_in_safe_zone
+                        return weight, danger, was_dropped
+            return 0, 0, 0
 
     @property
     def object_infos(self):
@@ -358,17 +476,29 @@ class AICollab(BaseGridEnv):
         s_items = self.postions_by_type("S").items()
         d_items = self.postions_by_type("D").items()
         for label, positions in tuple(s_items) + tuple(d_items):
-            for position in positions:
-                held_by = self._pick_by(self.positions[position], lambda x: x in self.agent_infos.keys())
-                carried_by = np.zeros(len(self.agent_infos.keys()))
-                if held_by:
-                    carried_by[self.name_to_id(held_by)] = 1
+            if FIX_NEW_PICKUP:
+                carried_by = np.zeros(len(self.agent_ids))
+                for aid in self.agent_ids:
+                    if self.object_carried[aid] == label:
+                        carried_by[self.name_to_id(aid)] = 1
 
                 sol[label] = {
-                    "pos": np.array(position),
                     "carried_by": carried_by,
                     "was_dropped": label in self.dropped_in_safe_zone
                 }
+            ###
+            else:
+                for position in positions:
+                    held_by = self._pick_by(self.positions[position], lambda x: x in self.agent_ids)
+                    carried_by = np.zeros(len(self.agent_ids))
+                    if held_by:
+                        carried_by[self.name_to_id(held_by)] = 1
+
+                    sol[label] = {
+                        # "pos": np.array(position),
+                        "carried_by": carried_by,
+                        "was_dropped": label in self.dropped_in_safe_zone
+                    }
         return sol
 
     # def carries_object(self, a_name: str):
@@ -398,6 +528,26 @@ class AICollab(BaseGridEnv):
             # "need_help": 1,
         }
 
+    def move_agent_to(self, aid, new_pos):
+        old_pos = tuple(self.agent_infos[aid]["pos"])
+        self.positions[old_pos].remove(aid)
+        self.positions[tuple(new_pos)].append(aid)
+        self.agent_infos[aid]["pos"] = np.array(new_pos)
+
+    @staticmethod
+    def place_A2_in_neighbourhood(env):
+        agent_pos = tuple(env.agent_infos["A1"]["pos"])
+        adj_cells = list(adjacent_cells_iterator(agent_pos, env.size, eight_dir=True, include_current=False))
+        random_pos = adj_cells[np.random.choice(len(adj_cells))]
+        env.move_agent_to("A2", random_pos)
+
+    @staticmethod
+    def place_A1_in_neighbourhood(env):
+        agent_pos = tuple(env.agent_infos["A2"]["pos"])
+        adj_cells = list(adjacent_cells_iterator(agent_pos, env.size, eight_dir=True, include_current=False))
+        random_pos = adj_cells[np.random.choice(len(adj_cells))]
+        env.move_agent_to("A1", random_pos)
+
 
 class AICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
 
@@ -411,6 +561,9 @@ class AICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
             label_agent_id = aid.lower()
             agent_ix = unwrapped_obs["agent_id"]
 
+            if unwrapped_obs["agent_strength"] > 1:
+                labels.append(f'{label_agent_id}h')
+
             if any(
                     obj_info["carried_by"][agent_ix] > 0
                     for obj_info in self.env.unwrapped.object_infos.values()
@@ -419,9 +572,7 @@ class AICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
             elif unwrapped_obs["nearby_obj_weight"] > 0 and unwrapped_obs["nearby_obj_danger"] == 1:
                 labels.append(f'{label_agent_id}d')
 
-            # TODO: handle other agents nearby
-            agent_info = gym.spaces.unflatten(self.agent_info_space, unwrapped_obs["A"])
-            pos = tuple(agent_info["pos"])
+            pos = tuple(unwrapped_obs["agent_pos"])
             if pos in self.env.unwrapped.goal_coords:
                 labels.append(f'{label_agent_id}z')
 
