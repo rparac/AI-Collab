@@ -1116,6 +1116,8 @@ class Simulation(Controller):
             final_coords = {'iron_box': []}
 
             locations = [[2.5, 1.5], [-2.5, 1.5]]
+            # locations = [[2.99, 1.5], [-2.99, 1.5]]
+            # locations = [[3.1, 1.9], [-3.1, 1.9]]
             for loc in locations:
                 final_coords['iron_box'].append(np.array(loc))
 
@@ -2485,9 +2487,9 @@ class Simulation(Controller):
             #print(commands)
             
             
-            if num_users >= 5:
+            if num_users >= 5 or True:
                 # commands.append({"$type": "step_physics", "frames": 1}) 5
-                commands.append({"$type": "step_physics", "frames": 1})
+                commands.append({"$type": "step_physics", "frames": 5})
 
             try:
                 

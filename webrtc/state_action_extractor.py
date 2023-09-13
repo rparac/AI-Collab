@@ -88,7 +88,7 @@ def determine_direction(origin,destination,pickup):
             action = Action.move_down_right.value
     elif diff == [-1,1]:
         if pickup:
-            action = Action.grab_down_left.value
+            action = Action.grab_current_pos.value
         else:
             action = Action.move_down_left.value
     elif diff == [1,-1]:

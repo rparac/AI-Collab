@@ -438,21 +438,26 @@ class OriginalAICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
         """Returns a modified observation."""
         labels = []
 
-        unwrapped_obs = obs['A']
-        agent_id = unwrapped_obs["agent_id"]
-        agent_name = self.env.unwrapped.id_to_name(agent_id)
+        for aid, flatten_obs in obs.items():
 
-        if unwrapped_obs["nearby_obj_weight"] > 0 and unwrapped_obs["nearby_obj_danger"] == 1:
-            labels.append('a1d')
+            unwrapped_obs = gym.spaces.unflatten(self.env.unflatten_observation_space, flatten_obs)
+            label_agent_id = aid.lower()
+            agent_ix = unwrapped_obs["agent_id"]
 
-        if any(
-                obj_info["carried_by"][agent_id]
-                for obj_info in tuple(v for k, v in unwrapped_obs.items() if k in self.env.unwrapped.object_ids)
-        ) > 0:
-            labels.append('a1l')
+            object_info = {k: gym.spaces.unflatten(self.object_info_space, unwrapped_obs[k]) for k in
+                           self.env.object_info_keys}
+            if any(
+                    v["carried_by"][agent_ix] > 0
+                    for k_, v in object_info.items()
+            ):
+                labels.append(f'{label_agent_id}l')
+            elif unwrapped_obs["nearby_obj_weight"] > 0 and unwrapped_obs["nearby_obj_danger"] == 1:
+                labels.append(f'{label_agent_id}d')
 
-        pos = unwrapped_obs[agent_name]["pos"]
-        if pos in self.env.unwrapped.goal_coords:
-            labels.append('a1z')
+            # TODO: handle other agents nearby
+            agent_info = gym.spaces.unflatten(self.env.agent_info_space, unwrapped_obs["A"])
+            pos = tuple(agent_info["pos"])
+            if pos in self.env.unwrapped.goal_coords:
+                labels.append(f'{label_agent_id}z')
 
         return labels

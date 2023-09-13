@@ -110,7 +110,7 @@ class AICollabEnv(gym.Env):
                         remove_self = robot_idx
                         break
                 del self.map_config['all_robots'][robot_idx] #Remove self from list of robots received
-                
+
                 #asyncio.run(self.main_ai())
                 self.gym_setup()
                 self.setup_ready = True
@@ -229,9 +229,9 @@ class AICollabEnv(gym.Env):
                 extra_status,
                 strength,
                 timer)
-                
+
             self.truncated = disable
-            
+
             if disable:
                 print("Robot disabled")
 
@@ -366,9 +366,9 @@ class AICollabEnv(gym.Env):
         )
 
         self.goal_count = 0
-        
+
     def reward(self, world_state, sensing_output):
- 
+
         reward = 0
         occupancy_map = world_state[0]
         object_metadata = world_state[1]
@@ -377,11 +377,11 @@ class AICollabEnv(gym.Env):
         if any(objects_held):
             for oh in objects_held:
                 if oh:
-                    self.extra['carrying_object'] = oh          
+                    self.extra['carrying_object'] = oh
         elif 'carrying_object' in self.extra and self.extra['carrying_object']:
             self.extra['dropped_object'] = self.extra['carrying_object']
             self.extra['carrying_object'] = ""
-                    
+
         #print(object_metadata, self.extra, objects_held)
         #Give a reward whenever agent drops object in desired area
         if 'dropped_object' in self.extra and self.extra['dropped_object'] and self.extra['dropped_object'] not in self.objects_in_goal: #Check that the agent just dropped object, and that this object has not been put in the goal area in the past
@@ -390,29 +390,29 @@ class AICollabEnv(gym.Env):
                 if key in object_metadata:
                     for object_map in object_metadata[key]:
                         if isinstance(object_map, list) and self.extra['dropped_object'] in object_map:
-                            
+
                             print(object_map)
-                            
+
                             if object_map[2] == 2:
                                 reward += 10 #Dangerous object dropped in safe area
                             elif object_map[2] == 1:
                                 reward += -5 #Benign object dropped in safe area
-                                
+
                             self.objects_in_goal.append(object_map[0])
 
-                        
-                       
+
+
         self.extra['dropped_object'] = ''
-        
-        
+
+
         ego_location = np.where(occupancy_map == 5)
         old_ego_location = np.where(sensing_output['occupancy_map'] == 5)
-        
+
         if ego_location[0][0] != old_ego_location[0][0] or ego_location[1][0] != old_ego_location[1][0]:
             reward += -0.01
-       
-        
-        
+
+
+
         return reward
 
     def step(self, action):
@@ -422,7 +422,7 @@ class AICollabEnv(gym.Env):
         world_state, sensing_output, action_terminated, action_truncated = self.take_action(
             action)
         # observed_state = {"frame": world_state, "message": self.messages}
-        
+
         observation = {"frame": sensing_output["occupancy_map"],
                        "objects_held": sensing_output["objects_held"],
                        "action_status": np.array([int(action_terminated[0]),
@@ -442,21 +442,21 @@ class AICollabEnv(gym.Env):
         info['object_key_to_index'] = self.object_key_to_index
         info['last_sensed'] = self.last_sensed
         info['time'] = float(world_state[7])
-        
 
-        
+
+
 
         #REWARD ESTIMATION
-        
-        
-        
-        
-        
+
+
+
+
+
         reward = self.reward(world_state,sensing_output)
-        
-        
-        
-        
+
+
+
+
         '''
         for xy in self.goal_coords:
             key = str(xy[0]) + '_' + str(xy[1])
@@ -466,15 +466,15 @@ class AICollabEnv(gym.Env):
                     if isinstance(object_map, list) and object_map[0] not in self.objects_in_goal:
                         self.objects_in_goal.append(object_map[0]) 
         '''
-        
-        
+
+
         if len(self.objects_in_goal) == self.map_config['num_objects']: #When all dangerous objects are put in the middle the episode should terminate
             terminated = True
         else:
             terminated = False
-            
+
         #Rewards
-        
+
         '''
         if previous_objects_held[0] and not self.objects_held[0]: #Reward given when object is left in the middle of the room
 
@@ -511,7 +511,7 @@ class AICollabEnv(gym.Env):
         else:
             terminated = False
         '''
-        
+
 
         return observation, reward, terminated, self.truncated, info
 
@@ -519,7 +519,7 @@ class AICollabEnv(gym.Env):
 
         super().reset(seed=seed)
         map_size = self.map_config['num_cells'][0]
-        
+
         self.truncated = False
 
         observation = {
@@ -551,19 +551,19 @@ class AICollabEnv(gym.Env):
 
 
         map_coordinates = np.arange(self.map_config['edge_coordinate'][0], self.map_config['edge_coordinate'][0]+self.map_config['cell_size']*map_size,1)
-        
-        
+
+
         half_cell = self.map_config['cell_size']/2
         for mc_idx in range(len(map_coordinates)):
             if map_coordinates[mc_idx] > 0:
                 map_coordinates[mc_idx] += half_cell
             elif map_coordinates[mc_idx] < 0:
-                map_coordinates[mc_idx] -= half_cell 
-        
-        self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if np.linalg.norm([x_coord,y_coord]) <= self.map_config['goal_radius']]
-        
+                map_coordinates[mc_idx] -= half_cell
 
-        
+        self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if np.linalg.norm([x_coord,y_coord]) <= self.map_config['goal_radius']]
+
+
+
         """
         goal_radius = int(self.map_config['goal_radius']/self.map_config['cell_size'])-1 #Square against circle
         max_x = int(np.round(map_size/2) + goal_radius-1)
@@ -573,13 +573,13 @@ class AICollabEnv(gym.Env):
         
         self.goal_coords = [(x,y) for x in range(min_x,max_x+1) for y in range(min_y, max_y+1)]
         """
-        
+
         #self.goal_coords = (min_x,max_x,min_y,max_y)
-        
+
         self.objects_in_goal = []
         self.extra = {}
-        
-        
+
+
         self.internal_state = [self.State.take_action, self.State.take_sensing_action]
         self.internal_data = {}
         self.object_info = []
@@ -596,7 +596,7 @@ class AICollabEnv(gym.Env):
         self.agent_reset = False
 
         self.map = np.array([], dtype=np.int16)
-        
+
         print("Waiting for location")
         while self.map.size == 0:
             continue
@@ -684,6 +684,7 @@ class AICollabEnv(gym.Env):
         action_end = 8
         wait_get_objects = 9
         wait_get_agents = 10
+        move_to_pickup = 11
 
     def take_action(self, action):
 
@@ -752,14 +753,14 @@ class AICollabEnv(gym.Env):
             "strength": strength,
             "objects_metadata": {}
         }
-        
+
 
 
         # print(state, sensing_state)
 
         ego_location = np.where(occupancy_map == 5)
         ego_location = np.array([ego_location[0][0], ego_location[1][0]])
-        
+
 
         self.own_neighbors_info_entry[2] = float(ego_location[0])
         self.own_neighbors_info_entry[3] = float(ego_location[1])
@@ -770,10 +771,10 @@ class AICollabEnv(gym.Env):
             #if action_status != ActionStatus.ongoing:
             #print("Original ", action)
             #print(occupancy_map)
-        
+
             #self.action_status = -1
             data['timer_locomotion'] = time.time()
-            
+
             if action.value < movement_commands:
 
                 action_index = [
@@ -790,12 +791,12 @@ class AICollabEnv(gym.Env):
 
                 ego_location = self.check_bounds(
                     action_index, ego_location, occupancy_map, complete_action["num_cells_move"])
-                    
-                
+
+
 
                 if not np.array_equal(ego_location, original_location):
-                
-                
+
+
                     target_coordinates = np.array(
                         self.map_config['edge_coordinate']) + ego_location * self.map_config['cell_size']
                     target = {
@@ -817,45 +818,41 @@ class AICollabEnv(gym.Env):
                     truncated[0] = True
                 else:
                     object_location = np.copy(ego_location)
+                    action_executed = False
 
-                    action_index = [
-                        Action.grab_up,
-                        Action.grab_right,
-                        Action.grab_down,
-                        Action.grab_left,
-                        Action.grab_up_right,
-                        Action.grab_up_left,
-                        Action.grab_down_right,
-                        Action.grab_down_left].index(action)
-
-                    object_location = self.check_bounds(action_index, object_location, occupancy_map,1)
                     key = str(object_location[0]) + '_' + str(object_location[1])
-                    
-                    if (not np.array_equal(object_location,ego_location)) and key in objects_metadata: #occupancy_map[object_location[0],object_location[1]] == 2:
+                    if action == Action.grab_current_pos and key in objects_metadata:
+                        print("Reverse before picking up")
+                        action_message.append(self.move_by(-0.5))
+                        state = self.State.waiting_ongoing
+                        data["next_state"] = self.State.move_to_pickup
+                        action_executed = True
+                        data["object_location"] = object_location
+
+                    else:
+                        action_index = [
+                            Action.grab_up,
+                            Action.grab_right,
+                            Action.grab_down,
+                            Action.grab_left,
+                            Action.grab_up_right,
+                            Action.grab_up_left,
+                            Action.grab_down_right,
+                            Action.grab_current_pos].index(action)
+
+                        object_location = self.check_bounds(action_index, object_location, occupancy_map,1)
+                        data["object_location"] = object_location
+
+                    if not action_executed and key in objects_metadata: #occupancy_map[object_location[0],object_location[1]] == 2:
                         print("Grabbing object")
                         #object_location = np.where(occupancy_map == 2)
                         #key = str(object_location[0][0]) + str(object_location[1][0])
 
-                        
-                        if isinstance(objects_metadata[key][0], list): 
-                            object_id = objects_metadata[key][0][0]
-                        else:
-                            object_id = objects_metadata[key][0]
-                            
-                        target_coordinates = np.array(
-                            self.map_config['edge_coordinate']) + object_location * self.map_config['cell_size']
-                        target = {
-                            "x": target_coordinates[0],
-                            "y": 0,
-                            "z": target_coordinates[1]}
-                        action_message.append(self.move_to(target=target,arrived_offset=0.5))#self.turn_to(object_id))
-                       
-                        state = self.State.waiting_ongoing
-                        data["next_state"] = self.State.grasping_object
-                        data["object"] = object_id
-                        
 
-                    else:
+                        state = self.move_to_pickup(action_message, data, objects_metadata)
+
+
+                    elif not action_message:
                         print("No object to grab")
                         truncated[0] = True
 
@@ -898,7 +895,7 @@ class AICollabEnv(gym.Env):
             elif time.time() - data['timer_locomotion'] > 10: #Timer if it gets stuck
                 truncated[0] = True
                 print("Action stuck 2", action_status)
-                    
+
         elif state == self.State.grasping_object:
             if action_status != ActionStatus.ongoing:
                 state = self.State.waiting_ongoing
@@ -921,6 +918,10 @@ class AICollabEnv(gym.Env):
                 action_message.append(self.move_by(-0.5))
                 state = self.State.waiting_ongoing
                 data["next_state"] = self.State.action_end
+
+        elif state == self.State.move_to_pickup:
+            if action_status != ActionStatus.ongoing:
+                state = self.move_to_pickup(action_message, data, objects_metadata)
 
         elif state == self.State.action_end:
             if action_status != ActionStatus.ongoing:
@@ -979,9 +980,9 @@ class AICollabEnv(gym.Env):
                     truncated[1] = True
 
             elif action == Action.send_message:
-            
+
                 neighbors_dict = {}
-                
+
                 if complete_action["robot"] > 0:
 
                     robot_data = self.neighbors_info[complete_action["robot"] - 1]
@@ -1085,11 +1086,11 @@ class AICollabEnv(gym.Env):
 
                         sensing_output["occupancy_map"] = occupancy_map
                         sensing_output["objects_metadata"] = objects_metadata
-                        
+
                         #Update objects locations
                         object_locations = np.where((occupancy_map == 2) | (occupancy_map == 4))
                         #object_locations = np.array([object_locations[0][:],object_locations[1][:]])
-                        
+
 
                         for ol_idx in range(len(object_locations[0])):
                             key = str(
@@ -1138,7 +1139,7 @@ class AICollabEnv(gym.Env):
                             pos_new = [round((danger_sensing_data[object_key]['location'][0]+abs(min_pos))/multiple), round((danger_sensing_data[object_key]['location'][2]+abs(min_pos))/multiple)]
                             '''
 
-                            
+
                             self.last_sensed.append(object_key)
 
                             try:
@@ -1153,7 +1154,7 @@ class AICollabEnv(gym.Env):
                                     True)
                             except:
                                 pdb.set_trace()
-                                
+
                             '''
                             for ob_idx, ob in enumerate(self.object_info):
                                 if ob[0] == object_key:
@@ -1210,9 +1211,29 @@ class AICollabEnv(gym.Env):
             sensing_state = self.State.take_sensing_action
 
 
-        
+
         return action_message, [
             state, sensing_state], data, sensing_output, terminated, truncated
+
+    def move_to_pickup(self, action_message, data, objects_metadata):
+        object_location = data["object_location"]
+        key = str(object_location[0]) + '_' + str(object_location[1])
+        if isinstance(objects_metadata[key][0], list):
+            object_id = objects_metadata[key][0][0]
+        else:
+            object_id = objects_metadata[key][0]
+
+        target_coordinates = np.array(
+            self.map_config['edge_coordinate']) + object_location * self.map_config['cell_size']
+        target = {
+            "x": target_coordinates[0],
+            "y": 0,
+            "z": target_coordinates[1]}
+        action_message.append(self.move_to(target=target, arrived_offset=0.5))  # self.turn_to(object_id))
+        state = self.State.waiting_ongoing
+        data["next_state"] = self.State.grasping_object
+        data["object"] = object_id
+        return state
 
     # Design an intelligent way of combining danger estimates
 
@@ -1252,8 +1273,8 @@ class AICollabEnv(gym.Env):
 
             self.object_info.append([object_key,int(weight),danger_data,float(position[0]),float(position[1]),float(timer)])
             self.object_key_to_index[object_key] = len(self.object_info)-1
-          
-    #When receiving info about robots, update your internal representation  
+
+    #When receiving info about robots, update your internal representation
     def update_neighbors_info(self, agent_key, timer, position, convert_coordinates):
 
         if convert_coordinates:
@@ -1285,10 +1306,10 @@ class AICollabEnv(gym.Env):
         multiple = self.map_config['cell_size']
         pos_new = [position[0]*multiple - abs(min_pos[0]), position[1]*multiple - abs(min_pos[1])]
 
-    
+
         return pos_new
-    
-    
+
+
     # Check movement limits
 
     def check_bounds(self, action_index, location, occupancy_map, num_cells):

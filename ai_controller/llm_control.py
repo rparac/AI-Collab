@@ -284,7 +284,7 @@ class LLMControl:
                 action = Action.move_up_left.value
         elif res[0] < 0 and res[1] > 0:
             if pickup:
-                action = Action.grab_down_left.value
+                action = Action.grab_current_pos.value
             else:
                 action = Action.move_down_left.value
         elif res[0] < 0 and res[1] < 0:

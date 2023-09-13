@@ -17,7 +17,7 @@ class Action(Enum):
     grab_up_right = 12
     grab_up_left = 13
     grab_down_right = 14
-    grab_down_left = 15
+    grab_current_pos = 15
     drop_object = 16
     danger_sensing = 17
     get_occupancy_map = 18

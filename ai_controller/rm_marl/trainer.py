@@ -4,6 +4,7 @@ import os
 import warnings
 from collections import defaultdict
 from typing import Dict
+import gymnasium
 
 # import joblib
 import cloudpickle
@@ -82,7 +83,7 @@ class Trainer:
                 steps_count += 1
 
                 if run_config["training"]:
-                    self.total_steps += 1
+                    self.total_steps += self.env.unwrapped.extra1
 
                 for env_id, env in envs.items():
 

@@ -8,13 +8,13 @@ from gym_collab.envs.ai_collab_wrapper import MARLWrapper
 from gym_collab.envs.helper_wrappers import AgentNameWrapper
 from rm_marl.agent import RewardMachineAgent
 from rm_marl.algo import QRM
-from rm_marl.envs.ai_collab import AICollabLabellingFunctionWrapper
+from rm_marl.envs.ai_collab import AICollabLabellingFunctionWrapper, OriginalAICollabLabellingFunctionWrapper
 from rm_marl.envs.wrappers import SingleAgentEnvWrapper, AutomataWrapper
 from rm_marl.reward_machine import RewardMachine
 from rm_marl.trainer import Trainer
 
 BASE_PATH = os.path.dirname(__file__)
-save_path = os.path.join(BASE_PATH, "logs/ai-collab-exp1/sim2sim_experiment")
+save_path = os.path.join(BASE_PATH, "logs/ai-collab-exp1/sim2sim_no_pos")
 
 rm_path = {
     "A1": os.path.join(BASE_PATH, "data/ai-collab/rm_agent_1.txt"),
@@ -24,7 +24,7 @@ rm_path = {
 def _create_env_and_agent(env, aid):
     env1 = AgentNameWrapper(env)
     env1 = SingleAgentEnvWrapper(env1, aid)
-    env1 = AICollabLabellingFunctionWrapper(env1)
+    env1 = OriginalAICollabLabellingFunctionWrapper(env1)
     env1 = AutomataWrapper(
         env1,
         RewardMachine.load_from_file(rm_path[aid]),
