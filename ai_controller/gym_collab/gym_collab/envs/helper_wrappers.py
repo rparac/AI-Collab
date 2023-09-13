@@ -131,9 +131,13 @@ class AutomaticSensingWrapper(gym.Wrapper):
         pos = _find_curr_agent_location(occupancy_map)
         grid_size = (len(occupancy_map), len(occupancy_map[0]))
         objects_nearby = list()
-        for next_pos in adjacent_cells_iterator(pos, grid_size):
+        # The line above commented out if we will allow other pick-up
+        # for next_pos in adjacent_cells_iterator(pos, grid_size):
+        for next_pos in [pos]:
             idx = self._find_object_index(map_metadata, info['object_key_to_index'], next_pos)
-            if idx != -1:
+            # TODO: This may be different if there are multiple objects
+            if idx != -1 and self.env.unwrapped.extra.get('carrying_object', '') == '':
+
                 check_item_code = 20
                 action = {"action": check_item_code, "item": idx, "message": "empty", "num_cells_move": 1, "robot": 0}
                 obs, _reward, terminated, truncated, info = self.env.step(action)
@@ -167,8 +171,8 @@ class AutomaticSensingWrapper(gym.Wrapper):
     @staticmethod
     def _find_object_index(map_metadata: Dict[str, List[List[Any]]], obj_key_to_idx: Dict[str, int],
                            pos: Tuple[int, int]) -> int:
-        pos_i, pos_j = pos
-        map_key = f"{pos_i}_{pos_j}"
+        pos_x, pos_y = pos
+        map_key = f"{pos_y}_{pos_x}"
         # No key or sensed an agent
         if map_key not in map_metadata or not isinstance(map_metadata[map_key][0], list):
             return -1
@@ -438,15 +442,15 @@ class SimpleObservations(gym.Wrapper):
                 carried_by = np.zeros(num_agents)
                 # An agent is holding an object if both object and agent are at the same location
                 # Also need to mitigate the case when two objects are at the same location
-                # TODO: check if this is fixed
-                if len(location_info) > 1 and isinstance(location_info[-1], str):
-                    agent_name = location_info[-1]
-                    carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
+                # TODO: we will need another method when there is more agents
+                # if len(location_info) > 1 and isinstance(location_info[-1], str):
+                #     agent_name = location_info[-1]
+                #     carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
 
                 # Check if the current agent is carrying the object
                 # Mitigation for 1 agent
-                # if sim_obj_id == self.env.unwrapped.extra.get('carrying_object', ''):
-                #     carried_by[self.agent_id] = 1
+                if sim_obj_id == self.env.unwrapped.extra.get('carrying_object', ''):
+                    carried_by[self.agent_id] = 1
                 sol[object_id] = gym.spaces.flatten(self.object_info_space,
                                                     SimpleObservations.object_info(pos=pos, carried_by=carried_by,
                                                                                    was_dropped=object_id in self.dropped_in_safe_zone))

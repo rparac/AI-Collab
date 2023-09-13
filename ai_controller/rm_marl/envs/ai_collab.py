@@ -606,8 +606,7 @@ class OriginalAICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
                 labels.append(f'{label_agent_id}d')
 
             # TODO: handle other agents nearby
-            agent_info = gym.spaces.unflatten(self.env.agent_info_space, unwrapped_obs["A"])
-            pos = tuple(agent_info["pos"])
+            pos = tuple(unwrapped_obs['agent_pos'])
             if pos in self.env.unwrapped.goal_coords:
                 labels.append(f'{label_agent_id}z')
 
