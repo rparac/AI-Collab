@@ -4,7 +4,7 @@ import os
 import warnings
 from collections import defaultdict
 from typing import Dict
-import gymnasium
+import json
 
 # import joblib
 import cloudpickle
@@ -32,6 +32,10 @@ class Trainer:
             dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         )
         logger = SummaryWriter(log_dir)
+
+        config_path = os.path.join(log_dir, "run_config.json")
+        with open(config_path, 'w') as f:
+            json.dump(run_config, f, indent=4)
 
         try:
             self._run(self.envs, run_config, logger)
