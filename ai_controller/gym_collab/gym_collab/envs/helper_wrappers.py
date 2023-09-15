@@ -94,6 +94,8 @@ class AutomaticSensingWrapper(gym.Wrapper):
                 info_to_update["map_metadata"] = obs_info["map_metadata"]
                 obs_to_update["action_status"] = np.logical_or(obs_to_update["action_status"],
                                                                occupancy_map_obs["action_status"])
+                # Wait doesn't update this so it is safer to get it from occupancy map
+                obs_to_update["strength"] = occupancy_map_obs["strength"]
             reward += reward_2
         if not terminated and not truncated:
             danger_sensing_obs, reward_2, terminated, truncated, danger_info = self._execute_danger_sensing(
@@ -158,7 +160,8 @@ class AutomaticSensingWrapper(gym.Wrapper):
             # Item danger for a benign object - {{'item_danger_confidence': [0.59551547], 'item_danger_level': 1, 'item_location': [4. 3.], 'item_time': [40.21824908], 'item_weight': 1}
             # Current guess is just if > 0.5
             # Map 0 - unknown, 1 - not dangerous, 2 - dangerous -> 0 - not dangerous, 1 - dangerous
-            obs["nearby_obj_danger"] = elem["item_danger_level"] - 1
+            # TODO: fix danger sensing
+            obs["nearby_obj_danger"] = 1 # elem["item_danger_level"] - 1
             obs["nearby_obj_weight"] = elem["item_weight"]
             item_loc_xy = elem["item_location"]
             obj_pos = (int(item_loc_xy[1]), int(item_loc_xy[0]))
@@ -299,7 +302,7 @@ class SimpleObservations(gym.Wrapper):
 
         # TODO: there is no easy way to obtain object ids at the moment
         #  Do a map sweep to get them. It is not too expensive if done once
-        self.object_info_keys = ['D0_1'] #, 'D1_1']
+        self.object_info_keys = ['D0_1', 'D1_1']
 
         self.unflatten_observation_space = gym.spaces.Dict({
             "agent_id": gym.spaces.Discrete(num_agents),

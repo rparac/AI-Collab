@@ -1,3 +1,4 @@
+import concurrent.futures
 import copy
 import datetime as dt
 import os
@@ -70,10 +71,14 @@ class Trainer:
             env_agents = {}
 
             _ = [a.reset(seed=seed) for a in self.agents.values()]
+            if run_config["env_parallel_reset"]:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    reset_obs_info = list(executor.map(lambda env_: env_.reset(seed=seed), envs.values()))
+            else:
+                reset_obs_info = [env_.reset(seed=seed) for env_ in envs.values()]
 
             obs, infos, env_agents, shared_events = {}, {}, {}, {}
-            for env_id, env in envs.items():
-                o, i = env.reset(seed=seed)
+            for env_id, (o, i) in zip(envs.keys(), reset_obs_info):
                 obs[env_id] = o
                 infos[env_id] = i
 
@@ -201,6 +206,7 @@ class Trainer:
                         )
 
                 if episode_frames[env_id]:
+                    episode_frames[env_id].append(np.zeros_like(episode_frames[env_id][-1]))
                     video = np.array(episode_frames[env_id]).transpose(0, 3, 1, 2)[
                             np.newaxis, :
                             ]

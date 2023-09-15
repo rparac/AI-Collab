@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import gymnasium
 from gymnasium.wrappers import RecordEpisodeStatistics, TimeLimit
 
+from rm_marl.reward_machine import RewardMachine
+
 if TYPE_CHECKING:
     from ..reward_machine import RewardMachine
 
@@ -15,9 +17,8 @@ class NumberStepsDiscountedRewardWrapper(gymnasium.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = super().step(action)
 
-        episode_stats = info.get("episode", {})
-        if terminated and episode_stats:
-            reward = episode_stats["r"] / episode_stats["l"]
+        if terminated and info["episode"]["r"]:
+            info["episode"]["r"] /= info["episode"]["l"]
         elif terminated:
             raise ValueError(info)
 
@@ -71,25 +72,33 @@ class RandomLabelingFunctionWrapper(gymnasium.Wrapper):
         return tuple(e for es in self.trace for e in es)
 
     def get_labels(self, _obs: dict = None, _prev_obs: dict = None):
-        valid_events = [e for e, c in self.random_events.items() if c.condition(self)]
-        if not valid_events:
-            return []
+        # TODO verify this logic
+        valid_events = [
+            e 
+            for e, c in self.random_events.items() 
+            if c.condition(self) and self.np_random.random() <= c.proba
+        ]
+        return valid_events
+        # if not valid_events:
+        #     return []
 
-        event = self.np_random.choice(valid_events)
-        config = self.random_events[event]
-        if self.np_random.random() <= config.proba:
-            return [event]
+        # event = self.np_random.choice(valid_events)
+        # config = self.random_events[event]
+        # if self.np_random.random() <= config.proba:
+        #     return [event]
 
-        return []
+        # return []
 
     def step(self, action):
         observation, reward, terminated, truncated, info = super().step(action)
         labels, simulated_env_updates = info.get("labels", []), {}
-        # two events can not happen at the same time
-        if not labels:
-            labels = self.get_labels()
-            for l in labels:
-                simulated_env_updates[l] = self.random_events[l].env_update
+        # FIXME
+        # # two events can not happen at the same time
+        # if not labels:
+        random_labels = self.get_labels()
+        for l in random_labels:
+            simulated_env_updates[l] = self.random_events[l].env_update
+            labels.append(l)
         
         self.trace.append(labels or [])
         info["labels"] = labels
@@ -153,11 +162,15 @@ class AutomataWrapper(gymnasium.Wrapper):
         info["labels"] = self.filter_labels(info["labels"], self.u)
         simulated_updates = info.pop("env_simulated_updates", {})
 
+        labels = copy.deepcopy(info["labels"])
         for e in info["labels"]:
             # apply simulated updates to the environment
             if e in simulated_updates:
-                simulated_updates[e](self.unwrapped)
+                labels_update = simulated_updates[e](self.unwrapped)
+                if labels_update:
+                    labels = labels_update(labels)
         
+        info["labels"] = labels
         u_next = self.rm.get_next_state(self.u, info["labels"])
         reward = self._get_reward(reward, u_next)
         self.u = u_next
@@ -194,10 +207,38 @@ class AutomataWrapper(gymnasium.Wrapper):
         info["rm_state"] = self.u
         return obs, info
 
+class RMProgressReward():
+    def __init__(self) -> None:
+        self.max_u = 0
+
+    def __call__(self, rm, u, u_next, reward):
+        if int(u_next) > self.max_u:
+            self.max_u = int(u_next)
+            reward += 1
+        elif int(u_next) < int(u):
+            reward -= 1
+        return reward
+
 class RewardMachineWrapper(AutomataWrapper):
 
+    def __init__(
+            self, 
+            env: gymnasium.Env, 
+            rm: RewardMachine, 
+            label_mode: AutomataWrapper.LabelMode = AutomataWrapper.LabelMode.ALL, 
+            termination_mode: AutomataWrapper.TerminationMode = AutomataWrapper.TerminationMode.RM,
+            reward_function: callable = None
+    ):
+        super().__init__(env, rm, label_mode, termination_mode)
+
+        self.reward_function = reward_function or self._simple_reward_func
+
+    @staticmethod
+    def _simple_reward_func(rm, u, u_next, reward):
+        return rm.get_reward(u, u_next)
+
     def _get_reward(self, reward, u_next):
-        return self.rm.get_reward(self.u, u_next)
+        return self.reward_function(self.rm, self.u, u_next, reward)
 
 
 class SingleAgentEnvWrapper(gymnasium.Wrapper):

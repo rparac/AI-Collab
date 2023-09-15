@@ -295,8 +295,9 @@ class Simulation(Controller):
         
         # self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
         # Roko/Leo experiment. Fix spawn location for now
-        self.ai_spawn_positions = [{"x": -0.5, "y": 0, "z": 1.5}]
-        # self.ai_spawn_positions = [{"x": -3, "y": 0, "z": 1.1}, {"x": -5, "y": 0, "z": 1.1}]
+        # sim-2-real experiment
+        self.ai_spawn_positions = [{"x": -0.5, "y": 0, "z": 1.5}, {"x": 0.5, "y": 0, "z": 1.5}]
+        # self.ai_spawn_positions = [{"x":  1.5, "y": 0, "z": -2.5}, {"x": -2.5, "y": 0, "z": 2.5}]
         self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
 
@@ -862,14 +863,14 @@ class Simulation(Controller):
             #self.communicate(commands)
             
             #commands = [{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
-            
-            
-        number_angles = int(float(self.cfg["goal_radius"])*2*np.pi)
+
+        goal_radius = float(self.cfg["goal_radius"])
+        number_angles = int(goal_radius * 2 * np.pi)
         
         for n in range(number_angles):
             angle_side = 2*n*np.pi/number_angles
-            xn = float(self.cfg["goal_radius"])*np.cos(angle_side)
-            zn = float(self.cfg["goal_radius"])*np.sin(angle_side)
+            xn = goal_radius * np.cos(angle_side)
+            zn = goal_radius * np.sin(angle_side)
         
             commands.append({"$type": "add_position_marker",
                                      "position": {"x": xn, "y": 0.01, "z": zn},
@@ -1115,9 +1116,11 @@ class Simulation(Controller):
             # iron_box is the name of the model used in tdw
             final_coords = {'iron_box': []}
 
-            locations = [[2.5, 1.5]] # [[2.5, 1.5], [-2.5, 1.5]]
-            # locations = [[2.99, 1.5], [-2.99, 1.5]]
-            # locations = [[3.1, 1.9], [-3.1, 1.9]]
+            # locations for 2 box experiment
+            locations = [[2.5, 1.5], [-2.5, -1.5]]
+            # locations = [[2.5, 2.5]] #, [-2.5, -1.5]]
+            # locations for heavy object experiment
+            # locations = [[2.5, 2.5]]
             for loc in locations:
                 final_coords['iron_box'].append(np.array(loc))
 
@@ -2249,7 +2252,7 @@ class Simulation(Controller):
                     pos2 = all_magnebots[idx2].dynamic.transform.position[[0,2]]
                     distance = np.linalg.norm(pos1 - pos2)
                     
-                    if not all_magnebots[idx2].disabled and distance < int(self.cfg['strength_distance_limit']) and not any(doIntersect([pos2[0],pos2[1]],[pos1[0],pos1[1]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))): #Check if robot is close enough to influence strength
+                    if not all_magnebots[idx2].disabled and distance < float(self.cfg['strength_distance_limit']) and not any(doIntersect([pos2[0],pos2[1]],[pos1[0],pos1[1]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))): #Check if robot is close enough to influence strength
                         all_magnebots[idx].strength += 1 #Increase strength
                         
                         robot2 = self.robot_names_translate[str(all_magnebots[idx2].robot_id)]

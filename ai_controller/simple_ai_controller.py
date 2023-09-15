@@ -1,6 +1,7 @@
 """
 AI controller whose sole purpose is to move left 3 spaces and then move down 4 spaces.
 """
+import concurrent
 from typing import Type
 
 import gym_collab
@@ -27,8 +28,12 @@ def create_ai_collab_env(client_number: int) -> AICollabEnv:
 
 
 env1 = MARLWrapper(create_ai_collab_env(client_number=1))
-# env2 = MARLWrapper(create_ai_collab_env(client_number=2))
-observation, info = env1.reset()
+env2 = MARLWrapper(create_ai_collab_env(client_number=2))
+
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    reset_obs_info = list(executor.map(lambda env_: env_.reset(), [env1, env2]))
+
+# observation, info = env1.reset()
 # observation2, info2 = env2.reset()
 
 while True:
