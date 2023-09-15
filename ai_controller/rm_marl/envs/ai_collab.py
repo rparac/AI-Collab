@@ -682,12 +682,16 @@ class OriginalAICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
 
         for aid, flatten_obs in obs.items():
 
-            unwrapped_obs = gym.spaces.unflatten(self.env.unflatten_observation_space, flatten_obs)
+            unwrapped_obs = gym.spaces.unflatten(self.env_dict[aid].unflatten_observation_space, flatten_obs)
             label_agent_id = aid.lower()
             agent_ix = unwrapped_obs["agent_id"]
 
             object_info = {k: gym.spaces.unflatten(self.object_info_space, unwrapped_obs[k]) for k in
-                           self.env.object_info_keys}
+                           self.env_dict[aid].object_info_keys}
+
+            if unwrapped_obs["agent_strength"] > 1:
+                labels.append(f'{label_agent_id}h')
+
             if any(
                     v["carried_by"][agent_ix] > 0
                     for k_, v in object_info.items()
@@ -696,9 +700,8 @@ class OriginalAICollabLabellingFunctionWrapper(LabelingFunctionWrapper):
             elif unwrapped_obs["nearby_obj_weight"] > 0 and unwrapped_obs["nearby_obj_danger"] == 1:
                 labels.append(f'{label_agent_id}d')
 
-            # TODO: handle other agents nearby
             pos = tuple(unwrapped_obs['agent_pos'])
-            if pos in self.env.unwrapped.goal_coords:
+            if pos in self.env_dict[aid].unwrapped.goal_coords:
                 labels.append(f'{label_agent_id}z')
 
         return labels

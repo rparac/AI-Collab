@@ -1,8 +1,12 @@
 """
 Simplifying wrappers to make the AI collab environment results easier to use.
 """
+import threading
+from collections import defaultdict
 from dataclasses import dataclass
 import random
+import asyncio
+import concurrent.futures
 from typing import Tuple, SupportsFloat, Any, Dict, List, Optional, Union
 
 import gymnasium as gym
@@ -10,8 +14,12 @@ import numpy as np
 from gymnasium.core import ObsType, WrapperActType, WrapperObsType, ActType
 
 from gym_collab.envs import AICollabEnv
-from gym_collab.envs.utils import adjacent_cells_iterator, wrap_action_enum, _find_curr_agent_location
+from gym_collab.envs.utils import adjacent_cells_iterator, wrap_action_enum, _find_curr_agent_location, \
+    find_object_held_location
 from .action import Action
+
+true_msg_prefix = "True"
+no_objects_msg = "<empty>"
 
 
 class AtomicWrapper(gym.Wrapper):
@@ -73,12 +81,15 @@ class AutomaticSensingWrapper(gym.Wrapper):
         if action['action'] == Action.drop_object.value:
             a_pos, _ = SimpleObservations.find_agent_positions(self.last_frame)
             if a_pos in self.env.goal_coords:
-                self.dropped_in_safe_zone.add(SimpleObservations.get_object_id(a_pos, self.last_map_metadata))
+                self.dropped_in_safe_zone.add(
+                    SimpleObservations.get_object_id(a_pos, self.last_frame, self.last_map_metadata))
 
         next_observation, reward, terminated, truncated, info = self.env.step(action)
         next_observation, info, reward2 = self._update_with_sensing_info(terminated, truncated, next_observation, info)
         self.last_frame = next_observation["frame"]
         self.last_map_metadata = info["map_metadata"]
+
+        self._send_message_if_holding_object(self.last_frame, self.last_map_metadata)
 
         return next_observation, reward + reward2, terminated, truncated, info
 
@@ -86,6 +97,8 @@ class AutomaticSensingWrapper(gym.Wrapper):
         reward = 0
         if not terminated and not truncated:
             occupancy_map_obs, reward_2, terminated, truncated, obs_info = self._execute_get_occupancy_map()
+            # Update for messages looping
+            obs_info["robot_key_to_index"][self.env.robot_id] = self.env.action_space["robot"].n - 1
             if info_to_update is None and obs_to_update is None:
                 info_to_update = obs_info
                 obs_to_update = occupancy_map_obs
@@ -112,9 +125,30 @@ class AutomaticSensingWrapper(gym.Wrapper):
             info_to_update["messages"] = messages_info["messages"]
             reward += reward_2
 
-        # Update for messages looping
-        obs_info["robot_key_to_index"][self.env.robot_id] = self.env.action_space["robot"].n - 1
         return obs_to_update, info_to_update, reward
+
+    def _send_message_if_holding_object(self, occupancy_map, map_metadata):
+        pos = _find_curr_agent_location(occupancy_map)
+        # Send a message that no objects are present if none are
+        send_action = self._get_send_message_action(no_objects_msg)
+        if self.env.unwrapped.extra.get('carrying_object', '') != '':
+            object_id = SimpleObservations.get_object_id(pos, occupancy_map, map_metadata)
+            send_action = self._get_send_message_action(object_id)
+
+        # Don't care about the output of sending a message.
+        # We should already have all the information
+        self.env.step(send_action)
+
+    @staticmethod
+    def _get_send_message_action(object_id: str) -> ActType:
+        broadcast_code = 0
+        return {
+            "action": Action.send_message.value,
+            "item": 0,
+            "message": object_id,  # TODO: add more information about the object
+            "num_cells_move": 0,
+            "robot": broadcast_code,
+        }
 
     def _execute_get_messages(self):
         get_message_obs, reward_2, terminated, truncated, info = self.env.step(
@@ -139,7 +173,6 @@ class AutomaticSensingWrapper(gym.Wrapper):
             idx = self._find_object_index(map_metadata, info['object_key_to_index'], next_pos)
             # TODO: This may be different if there are multiple objects
             if idx != -1 and self.env.unwrapped.extra.get('carrying_object', '') == '':
-
                 check_item_code = 20
                 action = {"action": check_item_code, "item": idx, "message": "empty", "num_cells_move": 1, "robot": 0}
                 obs, _reward, terminated, truncated, info = self.env.step(action)
@@ -161,11 +194,11 @@ class AutomaticSensingWrapper(gym.Wrapper):
             # Current guess is just if > 0.5
             # Map 0 - unknown, 1 - not dangerous, 2 - dangerous -> 0 - not dangerous, 1 - dangerous
             # TODO: fix danger sensing
-            obs["nearby_obj_danger"] = 1 # elem["item_danger_level"] - 1
+            obs["nearby_obj_danger"] = 1  # elem["item_danger_level"] - 1
             obs["nearby_obj_weight"] = elem["item_weight"]
             item_loc_xy = elem["item_location"]
             obj_pos = (int(item_loc_xy[1]), int(item_loc_xy[0]))
-            obj_id = SimpleObservations.get_object_id(obj_pos, map_metadata)
+            obj_id = SimpleObservations.get_object_id(obj_pos, occupancy_map, map_metadata)
             obs["nearby_obj_was_dropped"] = obj_id in self.dropped_in_safe_zone
 
         return obs, _reward, terminated, truncated, info
@@ -268,7 +301,7 @@ class SimpleActions(gym.Wrapper):
 
         # Attempt to grab up if everything fails.
         # This will result in the same errors as an incorrect grab
-        up_grab_code = Action.grab_current_pos# grab_down #grab_current_pos
+        up_grab_code = Action.grab_current_pos  # grab_down #grab_current_pos
         # up_grab_code = next(iter(dirs_to_pick_direction.values()))
         return wrap_action_enum(up_grab_code)
 
@@ -295,14 +328,14 @@ class SimpleObservations(gym.Wrapper):
         pos_max = self.env.observation_space['frame'].shape
         num_agents = self.env.num_agents
         self.object_info_space = gym.spaces.Dict({
-            # "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
+            "pos": gym.spaces.MultiDiscrete(list(pos_max), dtype=np.int32),
             "carried_by": gym.spaces.MultiBinary(num_agents),
             "was_dropped": gym.spaces.Discrete(2),
         })
 
         # TODO: there is no easy way to obtain object ids at the moment
         #  Do a map sweep to get them. It is not too expensive if done once
-        self.object_info_keys = ['D0_1', 'D1_1']
+        self.object_info_keys = ['D0_2']  # , 'D1_1']
 
         self.unflatten_observation_space = gym.spaces.Dict({
             "agent_id": gym.spaces.Discrete(num_agents),
@@ -318,6 +351,9 @@ class SimpleObservations(gym.Wrapper):
 
         self.agent_id = None
         self.other_agent_ids = None
+
+        # key -> agent_idx
+        self.get_object_carrier = defaultdict(lambda: -1)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[
         WrapperObsType, Dict[str, Any]]:
@@ -336,8 +372,9 @@ class SimpleObservations(gym.Wrapper):
         return self._map_observation(obs, info), reward, terminated, truncated, info
 
     def _map_observation(self, observation: ObsType, info: Dict[str, Any]) -> WrapperObsType:
-        agent_infos = self._get_agent_infos(self.other_agent_ids + [self.agent_id], info)
-        object_infos = self.get_object_infos(info["map_metadata"], self.num_agents)
+        self._update_carried_info(info)
+        # agent_infos = self._get_agent_infos(self.other_agent_ids + [self.agent_id], info)
+        object_infos = self.get_object_infos(observation["frame"], info["map_metadata"], self.num_agents)
 
         obs_new = {
             "agent_id": self.agent_id,
@@ -349,6 +386,17 @@ class SimpleObservations(gym.Wrapper):
             **object_infos,
         }
         return obs_new
+
+    def _update_carried_info(self, info):
+        for message in info["messages"]:
+            agent_name, msg_str, t = message
+            agent_id = SimpleObservations.name_to_idx(agent_name)
+            if msg_str == no_objects_msg:
+                self.get_object_carrier = defaultdict(lambda: -1, {k: v for k, v in self.get_object_carrier.items() if
+                                                                   v != agent_id})
+            else:
+                object_id = msg_str
+                self.get_object_carrier[object_id] = agent_id
 
     @staticmethod
     def _get_agent_infos(agent_ids: List[int], info: Dict[str, Any]):
@@ -379,7 +427,7 @@ class SimpleObservations(gym.Wrapper):
     @staticmethod
     def object_info(pos: (int, int), carried_by: np.ndarray, was_dropped: bool):
         return {
-            # "pos": np.array(pos),
+            "pos": np.array(pos),
             "carried_by": carried_by,
             "was_dropped": was_dropped,
         }
@@ -426,14 +474,19 @@ class SimpleObservations(gym.Wrapper):
         return f"A{idx + 1}"
 
     @staticmethod
-    def get_object_id(pos: Tuple[int, int], map_metadata: Dict[str, List[any]]) -> str:
+    def get_object_id(pos: Tuple[int, int], occupancy_map: np.ndarray, map_metadata: Dict[str, List[any]]) -> str:
         map_key = f"{pos[1]}_{pos[0]}"
         map_info = map_metadata[map_key]
-        assert type(map_info[0]) == list
+        if type(map_info[0]) != list:
+            # edge case, the object is not in the same position as the agent
+            pos_new = find_object_held_location(occupancy_map)
+            map_info = map_metadata[f"{pos_new[1]}_{pos_new[0]}"]
+            assert type(map_info[0]) == list
         id_, weight, danger_level = map_info[0]
         return f"{'D' if danger_level == 2 else 'S'}{id_}_{weight}"
 
-    def get_object_infos(self, map_metadata: Dict[str, List[Any]], num_agents: int) -> Dict[str, Any]:
+    def get_object_infos(self, occupancy_map: np.ndarray, map_metadata: Dict[str, List[Any]], num_agents: int) -> Dict[
+        str, Any]:
         sol = {}
         # self.env.unwrapped.extra['carrying_object'] -> return object id
         for str_pos, location_info in map_metadata.items():
@@ -441,17 +494,16 @@ class SimpleObservations(gym.Wrapper):
             if type(location_info[0]) == list:
                 pos = SimpleObservations._map_key_to_pos(str_pos)
                 sim_obj_id = location_info[0][0]
-                object_id = SimpleObservations.get_object_id(pos, map_metadata)
+                object_id = SimpleObservations.get_object_id(pos, occupancy_map, map_metadata)
                 carried_by = np.zeros(num_agents)
-                # An agent is holding an object if both object and agent are at the same location
-                # Also need to mitigate the case when two objects are at the same location
-                # TODO: we will need another method when there is more agents
-                # if len(location_info) > 1 and isinstance(location_info[-1], str):
-                #     agent_name = location_info[-1]
-                #     carried_by[SimpleObservations.name_to_idx(agent_name)] = 1
 
-                # Check if the current agent is carrying the object
-                # Mitigation for 1 agent
+                object_carrier_agent = self.get_object_carrier[object_id]
+                if object_carrier_agent != -1:
+                    carried_by[object_carrier_agent] = 1
+
+                # Check if the current agent is carrying the object.
+                # Note that this is only done to speed up information propagation.
+                # The agent will also be able to read it through a message
                 if sim_obj_id == self.env.unwrapped.extra.get('carrying_object', ''):
                     carried_by[self.agent_id] = 1
                 sol[object_id] = gym.spaces.flatten(self.object_info_space,
@@ -508,3 +560,109 @@ class AgentNameWrapper(gym.Wrapper):
     def action(self, action: WrapperActType) -> ActType:
         assert isinstance(action, dict) and len(action) == 1
         return action[SimpleObservations.idx_to_name(self.env.agent_id)]
+
+
+class EnvComposition(gym.Wrapper):
+    def __init__(self, env_dict):
+        first_env = next(iter(env_dict.values()))
+        super().__init__(first_env)
+
+        self.env_dict = env_dict
+
+        self.observation_space = gym.spaces.Dict({
+            k: gym.spaces.utils.flatten_space(env.observation_space)
+            for k, env in self.env_dict.items()
+        })
+        self.action_space = first_env.action_space
+        # self.action_space = gym.spaces.Dict({
+        #     k: env.action_space
+        #     for k, env in self.env_dict.items()
+        # })
+
+        self.prev_results = {
+            k: (None, 0, False, False, None)
+            for k in self.env_dict.keys()
+        }
+
+        self.tasks = {}
+        self.loop = asyncio.get_event_loop()
+        self.executor = concurrent.futures.ThreadPoolExecutor()
+
+        self.can_execute_next = {}
+
+    def reset(self, **kwargs):
+        observations, info = {}, None
+
+        dict_keys = list(self.env_dict.keys())
+        dict_values = [self.env_dict[k] for k in dict_keys]
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            reset_obs_info = list(executor.map(lambda env_: env_.reset(**kwargs), dict_values))
+
+        for env_id, (obs, info_) in zip(dict_keys, reset_obs_info):
+            observations[env_id] = gym.spaces.utils.flatten(self.env_dict[env_id].unflatten_observation_space, obs)
+            info = info_
+
+        self.prev_results = {
+            k: (observations[k], 0, False, False, info)
+            for k in self.env_dict.keys()
+        }
+        # Keeps track whether the next step can be executed,
+        # i.e. if the action had access to the latest information
+        self.can_execute_next = {
+            k: True
+            for k in self.env_dict.keys()
+        }
+        return observations, info
+
+    # def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+    #     def execute_step(env_act):
+    #         env_, act_ = env_act
+    #         return env_.step(act_)
+    #
+    #     observations, info = {}, None
+    #     reward_sum = 0
+    #     terminated, truncated = False, False
+    #
+    #     env_act_pairs = [(self.env_dict[aid], act_) for aid, act_ in action.items()]
+    #     with concurrent.futures.ThreadPoolExecutor() as executor:
+    #         step_outputs = list(executor.map(execute_step, env_act_pairs))
+    #
+    #     for aid, (obs, reward, terminated, truncated, info) in zip(action.keys(), step_outputs):
+    #         curr_env = self.env_dict[aid]
+    #         observations[aid] = gym.spaces.utils.flatten(curr_env.unflatten_observation_space, obs)
+    #         reward_sum += reward
+    #
+    #     return observations, reward_sum, terminated, truncated, info
+
+    def step(self, action: WrapperActType) -> Tuple[WrapperObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+        def execute_step(env_, act_):
+            out = env_.step(act_)
+            return out
+
+        for aid, act_ in action.items():
+            env = self.env_dict[aid]
+            # Only start a new task if one doesn't already exist for this environment
+            if self.can_execute_next[aid]:
+                future = self.executor.submit(execute_step, env, act_)
+                self.can_execute_next[aid] = False
+                self.tasks[aid] = future
+
+        # Update the results
+        for aid, task in self.tasks.items():
+            if task.done():
+                self.can_execute_next[aid] = True
+                obs, reward, term, trunc, info = task.result()
+                curr_env = self.env_dict[aid]
+                flattened_obs = gym.spaces.utils.flatten(curr_env.unflatten_observation_space, obs)
+                self.prev_results[aid] = flattened_obs, reward, term, trunc, info
+
+        # Combine the previous results
+        observations, reward_sum, terminated, truncated, info = {}, 0, False, False, {}
+        for aid, (obs, reward, terminated_, truncated_, info_) in self.prev_results.items():
+            observations[aid] = obs
+            reward_sum += reward
+            terminated |= terminated_
+            truncated |= truncated_
+            info = info_
+
+        return observations, reward_sum, terminated, truncated, info

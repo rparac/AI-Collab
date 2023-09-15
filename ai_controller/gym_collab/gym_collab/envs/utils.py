@@ -47,3 +47,7 @@ def create_check_item_action(item_idx: int) -> ActType:
 def _find_curr_agent_location(occupancy_map: np.ndarray) -> (int, int):
     agent_code = 5
     return tuple(np.transpose(np.where(occupancy_map == agent_code)[::-1]).squeeze())
+
+def find_object_held_location(occupancy_map: np.ndarray) -> (int, int):
+    object_held_code = 4
+    return tuple(np.transpose(np.where(occupancy_map == object_held_code)[::-1]).squeeze())

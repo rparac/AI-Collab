@@ -296,8 +296,8 @@ class Simulation(Controller):
         # self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
         # Roko/Leo experiment. Fix spawn location for now
         # sim-2-real experiment
-        self.ai_spawn_positions = [{"x": -0.5, "y": 0, "z": 1.5}, {"x": 0.5, "y": 0, "z": 1.5}]
-        # self.ai_spawn_positions = [{"x":  1.5, "y": 0, "z": -2.5}, {"x": -2.5, "y": 0, "z": 2.5}]
+        # self.ai_spawn_positions = [{"x": -0.5, "y": 0, "z": 1.5}, {"x": 0.5, "y": 0, "z": 1.5}]
+        self.ai_spawn_positions = [{"x":  1.5, "y": 0, "z": -2.5}, {"x": -2.5, "y": 0, "z": 2.5}]
         self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
 
@@ -1117,17 +1117,16 @@ class Simulation(Controller):
             final_coords = {'iron_box': []}
 
             # locations for 2 box experiment
-            locations = [[2.5, 1.5], [-2.5, -1.5]]
-            # locations = [[2.5, 2.5]] #, [-2.5, -1.5]]
+            # locations = [[2.5, 1.5], [-2.5, -1.5]]
             # locations for heavy object experiment
-            # locations = [[2.5, 2.5]]
+            locations = [[2.5, 2.5]]
             for loc in locations:
                 final_coords['iron_box'].append(np.array(loc))
 
             object_index = 0
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
-                    weight = 1
+                    weight = 2
                     danger_level = 2
 
                     try:
