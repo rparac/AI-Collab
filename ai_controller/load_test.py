@@ -24,7 +24,7 @@ CENTRALIZED_TRAINING = False
 MAX_STEPS = 5000
 
 # suffix = ""
-suffix = "_1h"
+suffix = "_1h_1l"
 
 ENV_PATH = os.path.join(BASE_PATH, f"small_env_2a{suffix}.txt")
 RM_PATHS = {

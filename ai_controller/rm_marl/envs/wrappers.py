@@ -212,8 +212,13 @@ class RMProgressReward():
         self.max_u = 0
 
     def __call__(self, rm, u, u_next, reward):
-        if int(u_next) > self.max_u:
+        if u_next == u:
+            reward += 0
+        elif int(u_next) > self.max_u:
             self.max_u = int(u_next)
+            reward += 1
+        elif int(u_next) < int(u) and rm.is_state_terminal(u):
+            self.max_u = 0
             reward += 1
         elif int(u_next) < int(u):
             reward -= 1

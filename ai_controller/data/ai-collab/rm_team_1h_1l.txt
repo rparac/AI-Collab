@@ -1,0 +1,42 @@
+0 # initial state
+(0, 1, 'a1d,~a1h') # agent1 senses a dangerous object
+(1, 0, '~a1d~a1l') # agent1 stops sensing a dangerous object
+
+(0, 2, 'a1d,a1h,a2h')
+
+(1, 2, 'a1d,a1h,a2h') # a2 here to help
+(2, 1, '~a1h,a1d,~a2h')
+(2, 0, '~a1d,~a1l')
+
+(2, 3, 'a1l,a1h,a2h')
+(3, 0, '~a1d,~a1h')
+(3, 1, 'a1d,~a1h,~a2h')
+(3, 2, 'a1d,a1h,a2h')
+
+(3, 4, 'a1l,a1z,a1h,a2h')
+(4, 3, 'a1l,~a1z,a1h,a2h')
+
+(4, 7, '~a1l')
+(4, 7, '~a1h,~a2h')
+
+# light object A1
+(1, 5, 'a1l')
+(5, 1, 'a1d')
+(5, 6, 'a1l,a1z')
+(6, 5, 'a1l,~a1z')
+(6, 7, '~a1l')
+(7, 1, 'a1d,~a1h')
+
+# light object A2
+(0, 8, 'a2d,~a2z')
+(8, 0, '~a2d,~a2l') # agent1 stops sensing a dangerous object
+(8, 9, 'a2l') # agent1 lifts the dangerous object
+(9, 8, '~a2l,~a2z') # agent1 drops the dangerous object
+(9, 10, 'a2l,a2z') # agent1 enters the zone
+(10, 9, 'a2l,~a2z') # agent1 exits the zone
+(10, 7, '~a2l') # agent1 drops the dangerous object in the zone
+(7, 8, 'a2d,~a2z')
+
+(7, 0, '~a2d,~a1d')
+(7, 2, 'a1d,a1h,a2h')
+(7, 7, 'True')
